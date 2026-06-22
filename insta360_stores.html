@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>影石 Insta360 — 全国门店数据看板</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
+  color: #333; height: 100vh; overflow: hidden;
+}
+#app { display: flex; height: 100vh; }
+
+/* 左侧面板 */
+#sidebar {
+  width: 420px; min-width: 420px;
+  background: #fff;
+  display: flex; flex-direction: column;
+  border-right: 1px solid #e8e8e8;
+  z-index: 10; overflow: hidden;
+  box-shadow: 2px 0 20px rgba(0,0,0,0.08);
+}
+#header {
+  padding: 18px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #00d6ca 50%, #009688 100%);
+  color: #fff; flex-shrink: 0;
+}
+#header h1 { font-size: 20px; font-weight: 700; letter-spacing: 1px; }
+#header .subtitle { font-size: 12px; opacity: 0.9; margin-top: 4px; }
+
+/* 统计卡片 */
+#stats-bar {
+  display: flex; gap: 8px; padding: 12px 16px;
+  background: linear-gradient(180deg, #f0f4ff 0%, #f7f9fc 100%);
+  flex-shrink: 0; flex-wrap: wrap;
+}
+.stat-card {
+  flex: 1; min-width: 70px; text-align: center;
+  padding: 12px 6px; background: #fff;
+  border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  border-top: 3px solid #ccc; transition: transform 0.2s;
+}
+.stat-card:hover { transform: translateY(-2px); }
+.stat-card:nth-child(1) { border-top-color: #00d6ca; }
+.stat-card:nth-child(2) { border-top-color: #667eea; }
+.stat-card:nth-child(3) { border-top-color: #f093fb; }
+.stat-card:nth-child(4) { border-top-color: #fa709a; }
+.stat-card .num { font-size: 22px; font-weight: 700; }
+.stat-card:nth-child(1) .num { color: #009688; }
+.stat-card:nth-child(2) .num { color: #667eea; }
+.stat-card:nth-child(3) .num { color: #c471ed; }
+.stat-card:nth-child(4) .num { color: #fa709a; }
+.stat-card .label { font-size: 11px; color: #999; margin-top: 2px; }
+
+/* 筛选区 */
+#filters {
+  padding: 12px 16px; display: flex; flex-direction: column;
+  gap: 8px; flex-shrink: 0;
+  border-bottom: 2px solid transparent;
+  border-image: linear-gradient(90deg, #00d6ca, #667eea, #fa709a) 1;
+}
+.filter-row { display: flex; gap: 8px; align-items: center; }
+.filter-row select, .filter-row input {
+  flex: 1; padding: 8px 10px;
+  background: #f7f9fc; color: #333;
+  border: 1px solid #e0e0e0; border-radius: 8px;
+  font-size: 13px; outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+}
+.filter-row select:focus, .filter-row input:focus {
+  border-color: #00d6ca;
+  box-shadow: 0 0 0 3px rgba(0,214,202,0.12);
+}
+.filter-row input::placeholder { color: #bbb; }
+.btn {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #00d6ca, #009688);
+  color: #fff; border: none; border-radius: 8px; cursor: pointer;
+  font-size: 13px; font-weight: 600; white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0,214,202,0.3);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,214,202,0.4); }
+.btn-outline {
+  background: #fff; border: 2px solid #00d6ca; color: #00d6ca;
+  box-shadow: none;
+}
+.btn-outline:hover { background: #e6f9f8; }
+.btn-sm { padding: 6px 14px; font-size: 12px; }
+#result-count { font-size: 12px; color: #667eea; text-align: right; font-weight: 600; }
+
+/* 门店列表 */
+#store-list-wrapper { flex: 1; overflow-y: auto; padding: 0; }
+#store-list-wrapper::-webkit-scrollbar { width: 6px; }
+#store-list-wrapper::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #00d6ca, #667eea);
+  border-radius: 3px;
+}
+.store-item {
+  padding: 12px 16px; border-bottom: 1px solid #f0f0f0;
+  border-left: 3px solid transparent;
+  cursor: pointer; transition: background 0.15s, border-left-color 0.2s;
+}
+.store-item:hover { background: #f5f7fa; border-left-color: #00d6ca; }
+.store-item.active { background: #e6f7f7; border-left: 3px solid #00d6ca; }
+.store-item .name { font-size: 14px; font-weight: 600; color: #222; margin-bottom: 4px; }
+.store-item .address { font-size: 12px; color: #999; line-height: 1.5; margin-bottom: 4px; }
+.store-item .meta { font-size: 11px; color: #aaa; display: flex; gap: 12px; }
+
+/* 视图切换 */
+#view-tabs { display: flex; gap: 4px; padding: 8px 16px; flex-shrink: 0; }
+.tab-btn {
+  flex: 1; padding: 10px; background: #f0f0f0; color: #888;
+  border: none; border-radius: 8px; cursor: pointer;
+  font-size: 13px; text-align: center; transition: all 0.2s; font-weight: 500;
+}
+.tab-btn:hover { background: #e8e8e8; color: #555; }
+.tab-btn.active {
+  background: linear-gradient(135deg, #667eea, #00d6ca);
+  color: #fff; font-weight: 700; box-shadow: 0 3px 10px rgba(102,126,234,0.35);
+}
+
+/* 图表区 */
+#chart-view { display: none; flex: 1; overflow-y: auto; padding: 16px; }
+#chart-view.active { display: block; }
+.chart-section {
+  background: #fff; border-radius: 12px; padding: 18px;
+  margin-bottom: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  position: relative; overflow: hidden;
+}
+.chart-section::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+}
+.chart-section:nth-child(1)::before { background: linear-gradient(90deg, #00d6ca, #667eea); }
+.chart-section:nth-child(2)::before { background: linear-gradient(90deg, #fa709a, #f093fb); }
+.chart-section:nth-child(3)::before { background: linear-gradient(90deg, #667eea, #00d6ca); }
+.chart-section h3 { font-size: 15px; color: #333; margin-bottom: 14px; }
+.chart-wrap { position: relative; height: 320px; }
+.chart-wrap-lg { height: 420px; }
+
+/* 右侧地图 */
+#map-container { flex: 1; position: relative; }
+#map { width: 100%; height: 100%; }
+
+/* Popup */
+.leaflet-popup-content { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif; min-width: 220px; }
+.popup-name { font-size: 14px; font-weight: 700; color: #222; margin-bottom: 6px; }
+.popup-info { font-size: 12px; color: #666; line-height: 1.6; }
+
+/* 手机适配 */
+@media (max-width: 768px) {
+  #app { flex-direction: column; }
+  #sidebar { width: 100%; min-width: 100%; max-height: 55vh; }
+  #map-container { height: 45vh; }
+}
+/* Loading */
+#loading {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(255,255,255,0.95);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999; flex-direction: column;
+}
+#loading .spinner {
+  width: 48px; height: 48px;
+  border: 4px solid transparent;
+  border-top-color: #667eea;
+  border-right-color: #00d6ca;
+  border-bottom-color: #fa709a;
+  border-left-color: #f093fb;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+#loading .text { color: #999; margin-top: 14px; font-size: 14px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 图层控制面板 - 浮动在地图左上角 */
+#layer-control {
+  position: absolute; top: 14px; left: 14px; z-index: 1000;
+  background: rgba(255,255,255,0.96);
+  backdrop-filter: blur(8px);
+  border-radius: 12px; padding: 12px 14px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  min-width: 170px;
+  border: 1px solid rgba(255,255,255,0.3);
+}
+#layer-control .lc-title {
+  font-size: 12px; font-weight: 700; color: #666;
+  text-transform: uppercase; letter-spacing: 1px;
+  margin-bottom: 8px; padding-bottom: 6px;
+  border-bottom: 1px solid #eee;
+}
+.lc-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 4px; cursor: pointer;
+  border-radius: 6px; transition: background 0.15s;
+  font-size: 13px; color: #333;
+}
+.lc-item:hover { background: #f0f4ff; }
+.lc-item input[type="checkbox"] {
+  width: 16px; height: 16px; accent-color: #667eea; cursor: pointer;
+}
+.lc-item .lc-badge {
+  font-size: 10px; padding: 1px 6px; border-radius: 4px;
+  color: #fff; font-weight: 600; margin-left: auto;
+}
+.badge-heat { background: #e74c3c; }
+.badge-buffer { background: #3498db; }
+.badge-voronoi { background: #9b59b6; }
+#buffer-radius {
+  margin-left: 24px; display: flex; align-items: center; gap: 4px;
+  font-size: 11px; color: #888;
+}
+#buffer-radius select {
+  font-size: 11px; padding: 2px 4px; border: 1px solid #ddd; border-radius: 4px;
+  background: #fff; cursor: pointer;
+}
+</style>
+</head>
+<body>
+
+<div id="loading"><div class="spinner"></div><div class="text">正在加载门店数据…</div></div>
+
+<div id="app">
+  <!-- 左侧面板 -->
+  <div id="sidebar">
+    <div id="header">
+      <h1>影石 Insta360 · 门店数据看板</h1>
+      <div class="subtitle">共 <span id="total-num"></span> 家门店 · <span id="total-prov"></span> 省 · <span id="total-city"></span> 市</div>
+    </div>
+
+    <div id="stats-bar">
+      <div class="stat-card"><div class="num" id="stat-total">—</div><div class="label">总门店</div></div>
+      <div class="stat-card"><div class="num" id="stat-prov">—</div><div class="label">省份</div></div>
+      <div class="stat-card"><div class="num" id="stat-city">—</div><div class="label">城市</div></div>
+      <div class="stat-card"><div class="num" id="stat-phone">—</div><div class="label">有电话</div></div>
+    </div>
+
+    <div id="view-tabs">
+      <button class="tab-btn active" onclick="switchView('list')">地图视图</button>
+      <button class="tab-btn" onclick="switchView('chart')">统计图表</button>
+    </div>
+
+    <div id="filters">
+      <div class="filter-row">
+        <select id="filter-province" onchange="onFilterChange()">
+          <option value="">全部省份</option>
+        </select>
+        <select id="filter-city" onchange="onFilterChange()">
+          <option value="">全部城市</option>
+        </select>
+      </div>
+      <div class="filter-row">
+        <input type="text" id="filter-search" placeholder="搜索门店名称或地址…" oninput="onFilterChange()">
+        <button class="btn btn-sm btn-outline" onclick="resetFilters()">重置</button>
+      </div>
+      <div id="result-count"></div>
+    </div>
+
+    <div id="store-list-wrapper"></div>
+
+    <div id="chart-view">
+      <div class="chart-section">
+        <h3>各省份门店数量 TOP 15</h3>
+        <div class="chart-wrap"><canvas id="chart-province"></canvas></div>
+      </div>
+      <div class="chart-section">
+        <h3>城市门店数量 TOP 20</h3>
+        <div class="chart-wrap"><canvas id="chart-city"></canvas></div>
+      </div>
+      <div class="chart-section">
+        <h3>全国门店分布</h3>
+        <div class="chart-wrap-lg"><canvas id="chart-heatmap"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右侧地图 -->
+  <div id="map-container">
+    <div id="map"></div>
+    <!-- 图层控制面板 -->
+    <div id="layer-control">
+      <div class="lc-title">分析图层</div>
+      <label class="lc-item">
+        <input type="checkbox" id="chk-heat" onchange="toggleHeatmap()">
+        🔥 热力图 <span class="lc-badge badge-heat">HOT</span>
+      </label>
+      <label class="lc-item">
+        <input type="checkbox" id="chk-buffer" onchange="toggleBuffer()">
+        ⭕ 缓冲区 <span class="lc-badge badge-buffer">ZONE</span>
+      </label>
+      <div id="buffer-radius">
+        <span>半径:</span>
+        <select id="buffer-dist" onchange="toggleBuffer()">
+          <option value="1000">1 km</option>
+          <option value="3000" selected>3 km</option>
+          <option value="5000">5 km</option>
+          <option value="10000">10 km</option>
+        </select>
+      </div>
+      <label class="lc-item">
+        <input type="checkbox" id="chk-voronoi" onchange="toggleVoronoi()">
+        🕸️ 服务区 <span class="lc-badge badge-voronoi">VOR</span>
+      </label>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="https://unpkg.com/d3-delaunay@6.0.4/dist/d3-delaunay.min.js"></script>
+<script src="https://unpkg.com/polygon-clipping@0.15.7/dist/polygon-clipping.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<!-- 数据嵌入位置 -->
+<script>
+// ============ DATA ============
+const ALL_STORES = [{"storeName": "影石Insta360南京德基广场直营旗舰店", "province": "江苏省", "city": "南京市", "district": "玄武区", "address": "江苏省南京市玄武区中山路18号-1德基二期B1层C182影石", "phone": "17714421037", "hours": "10:30-22:30", "status": "休息中", "lng": 118.79, "lat": 32.05}, {"storeName": "影石Insta360深圳壹方城直营旗舰店", "province": "广东省", "city": "深圳市", "district": "宝安区", "address": "广东省深圳市宝安区新安街道壹方城购物中心B2-063A影石insta360", "phone": "17727933736", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 113.894497, "lat": 22.558977}, {"storeName": "影石Insta360深圳壹方汇直营店", "province": "广东省", "city": "深圳市", "district": "南山区", "address": "广东省深圳市南山区听海大道5059前海壹方汇购物中心一楼3号门旁影石Insta360", "phone": "15361601817", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 113.903406, "lat": 22.535079}, {"storeName": "影石Insta360深圳机场直营店", "province": "广东省", "city": "深圳市", "district": "宝安区", "address": "深圳宝安国际机场T3航站楼3C-01-01", "phone": "19068088793", "hours": "7:00-22:30", "status": "休息中", "lng": 113.81804, "lat": 22.63381}, {"storeName": "影石Insta360成都太古里授权旗舰店", "province": "四川省", "city": "成都市", "district": "锦江区", "address": "四川省成都市锦江区中纱帽街8号太古里负一层M009号商铺", "phone": "17318699770", "hours": "10：00-22：00", "status": "休息中", "lng": 104.09, "lat": 30.66}, {"storeName": "影石Insta360成都万象城授权体验店", "province": "四川省", "city": "成都市", "district": "成华区", "address": "成都市成华区万象城C馆1楼141号影石Insta360", "phone": "15802883480", "hours": "周日至周四 10:00-22:00; 周五至周六 10:00-22:30", "status": "营业中", "lng": 104.122217, "lat": 30.653076}, {"storeName": "影石Insta360重庆来福士授权体验店", "province": "重庆市", "city": "市辖区", "district": "渝中区", "address": "重庆市渝中区嘉陵江滨江路5号重庆来福士L1-62号", "phone": "13983092469", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 106.594626, "lat": 29.571602}, {"storeName": "影石Insta360北京蓝色港湾授权体验店", "province": "北京市", "city": "市辖区", "district": "朝阳区", "address": "北京市朝阳区朝阳公园路6号蓝色港湾1F层SA-288号影石Insta360", "phone": "15701687298", "hours": "10:00-22:00", "status": "休息中", "lng": 116.48, "lat": 39.95}, {"storeName": "影石Insta360郑州东万象城授权体验店", "province": "河南省", "city": "郑州市", "district": "金水区", "address": "郑州市金水区祥盛街东风南路交叉口西南100米郑东万象城南区一楼CL103", "phone": "18638546739", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 113.772315, "lat": 34.770696}, {"storeName": "影石Insta360郑州大卫城授权体验店", "province": "河南省", "city": "郑州市", "district": "金水区", "address": "河南省郑州市金水区西太康路和二七路交叉路口丹尼斯大卫城MALL6F层M048号", "phone": "19903840403", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 113.672547, "lat": 34.76411}, {"storeName": "影石Insta360深圳龙华壹方天地授权体验店", "province": "广东省", "city": "深圳市", "district": "龙华区", "address": "龙华街道3639号壹方天地C区LG-005", "phone": "19075357190", "hours": "10:00-22:00", "status": "休息中", "lng": 114.03583, "lat": 22.650784}, {"storeName": "影石Insta360武汉天地壹方授权体验店", "province": "湖北省", "city": "武汉市", "district": "江岸区", "address": "湖北省武汉市江岸区中山大道1515号(武汉天地壹方南馆店)影石Insta360", "phone": "18163382260", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 114.317347, "lat": 30.616275}, {"storeName": "影石Insta360银川阅彩城授权体验店", "province": "宁夏回族自治区", "city": "银川市", "district": "金凤区", "address": "银川市金凤区阅彩城1F数字生活主题街（105A.105B）影石Insta360", "phone": "17795183979", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 106.262995, "lat": 38.520326}, {"storeName": "影石Insta360北京朝阳合生汇授权体验店", "province": "北京市", "city": "市辖区", "district": "朝阳区", "address": "北京市朝阳区西大望路甲22号合生汇B2层51号影石Insta360专卖店", "phone": "15110285617", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 116.486339, "lat": 39.899578}, {"storeName": "影石Insta360广州天河城授权体验店", "province": "广东省", "city": "广州市", "district": "天河区", "address": "广州市天河区天河路208号天河城购物中心3楼影石Insta360专卖店", "phone": "15360003665", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 113.329109, "lat": 23.137929}, {"storeName": "影石Insta360杭州奥体印象城授权体验店", "province": "浙江省", "city": "杭州市", "district": "萧山区", "address": "浙江省杭州市萧山区飞虹路1408号奥体印象城一楼L1-04影石Insta360", "phone": "19032587933", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 120.258411, "lat": 30.230015}, {"storeName": "影石Insta360广州天环广场授权体验店", "province": "广东省", "city": "广州市", "district": "天河区", "address": "广州市天河区天河路218号2楼L224d", "phone": "15360002309", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 113.330931, "lat": 23.137838}, {"storeName": "影石Insta360武汉武商MALL授权体验店", "province": "湖北省", "city": "武汉市", "district": "江汉区", "address": "湖北省武汉市江汉区解放大道武商MALL国广A区6楼", "phone": "15927441545", "hours": "10:00-22:00", "status": "休息中", "lng": 114.28, "lat": 30.59}, {"storeName": "影石Insta360重庆万象城授权体验店", "province": "重庆市", "city": "市辖区", "district": "九龙坡区", "address": "谢家湾正街51、53号重庆万象城DLG16号商铺", "phone": "19389320713", "hours": "周日～周四10:00-22:00 周五～周六及节假日10:00-22:30", "status": "休息中", "lng": 106.525426, "lat": 29.522704}, {"storeName": "影石Insta360上海万象城授权体验店", "province": "上海市", "city": "市辖区", "district": "闵行区", "address": "吴中路1599号万象城购物中心 L540", "phone": "18951570987", "hours": "10:00-22:00", "status": "休息中", "lng": 121.374882, "lat": 31.175767}, {"storeName": "影石Insta360北京清河万象汇授权体验店", "province": "北京市", "city": "市辖区", "district": "海淀区", "address": "清河中街68号/66号院1号楼万象汇一层L114", "phone": "19231189360", "hours": "10：00-22：00", "status": "休息中", "lng": 116.341954, "lat": 40.035789}, {"storeName": "影石Insta360杭州万象城授权体验店", "province": "浙江省", "city": "杭州市", "district": "上城区", "address": "浙江省杭州市上城区富春路701号杭州万象城负一楼B1SC16号商铺影石Insta360", "phone": "19032589733", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 120.221206, "lat": 30.260281}, {"storeName": "影石Insta360大连华南万象汇授权体验店", "province": "辽宁省", "city": "大连市", "district": "甘井子区", "address": "辽宁省大连市甘井子区山东路350号大连华南万象汇LG139", "phone": "15140606034", "hours": "9:30-21:30", "status": "休息中", "lng": 121.59, "lat": 39.0}, {"storeName": "影石Insta360上海陆家嘴正大广场授权体验店", "province": "上海市", "city": "市辖区", "district": "浦东新区", "address": "上海市浦东新区陆家嘴西路168号正大广场5F01B", "phone": "17278883706", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 121.506589, "lat": 31.242437}, {"storeName": "影石Insta360长沙IFS授权体验店", "province": "湖南省", "city": "长沙市", "district": "芙蓉区", "address": "解放西路188号IFS国际金融中心地下一层LG116A号商铺", "phone": "19097543617", "hours": "10:00-22:00", "status": "休息中", "lng": 112.986454, "lat": 28.198535}, {"storeName": "影石Insta360上海世博天地授权体验店", "province": "上海市", "city": "市辖区", "district": "浦东新区", "address": "上钢新村街道世博大道1467号世博天地L109号商铺", "phone": "18096512026", "hours": "10:00-22:00", "status": "休息中", "lng": 121.497715, "lat": 31.190457}, {"storeName": "影石Insta360深圳福田COCOPARK授权体验店", "province": "广东省", "city": "深圳市", "district": "福田区", "address": "福华三路268号福田星河COCO Park购物中心北区负一楼 B1-127A", "phone": "18926465739", "hours": "10：00-22：00", "status": "休息中", "lng": 114.060805, "lat": 22.539623}, {"storeName": "影石Insta360杭州西溪天街授权体验店", "province": "浙江省", "city": "杭州市", "district": "西湖区", "address": "浙江省杭州市西湖区余杭塘路1001号西溪龙湖天街 1 楼A-1F-05影石Insta360", "phone": "19032585733", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 120.076158, "lat": 30.298537}, {"storeName": "影石Insta360武汉梦时代授权体验店", "province": "湖北省", "city": "武汉市", "district": "武昌区", "address": "中南路街道武珞路598号武商梦时代负一层A-037A", "phone": "19036916602", "hours": "10:00-22:00", "status": "休息中", "lng": 114.347113, "lat": 30.53502}, {"storeName": "影石Insta360福州万象城授权体验店", "province": "福建省", "city": "福州市", "district": "鼓楼区", "address": "福州市鼓楼区洪山园路5号华润万象城购物广场5楼L509影石专卖店", "phone": "18159082923", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 119.283632, "lat": 26.08102}, {"storeName": "影石Insta360深圳KK ONE授权体验店", "province": "广东省", "city": "深圳市", "district": "福田区", "address": "广东省深圳市福田区滨河大道9289号福田KKONE商场（京基滨河时代广场）L103", "phone": "15119240639", "hours": "10:00-22:00", "status": "休息中", "lng": 114.033272, "lat": 22.534179}, {"storeName": "影石Insta360北京西单大悦城授权体验店", "province": "北京市", "city": "市辖区", "district": "西城区", "address": "北京市西城区西单大悦城购物中心4层", "phone": "18522323191", "hours": "10:00-22:00", "status": "休息中", "lng": 116.379306, "lat": 39.916963}, {"storeName": "影石Insta360福州东二泰禾授权体验店", "province": "福建省", "city": "福州市", "district": "晋安区", "address": "福建省福州市晋安区泰禾广场西区1层L123-2影石Insta360", "phone": "19906938512", "hours": "10:00-22:00", "status": "休息中", "lng": 119.343648, "lat": 26.095913}, {"storeName": "影石Insta360深圳大悦城授权体验店", "province": "广东省", "city": "深圳市", "district": "宝安区", "address": "广东省深圳市宝安区新安街道创业二路与前进一路交会处宝安大悦城L101", "phone": "18118752596", "hours": "10:00-22:00", "status": "休息中", "lng": 113.908874, "lat": 22.575287}, {"storeName": "影石Insta360成都环球中心授权体验店", "province": "四川省", "city": "成都市", "district": "武侯区", "address": "四川省成都市武侯区天府大道北段1700号环球中心1F", "phone": "19960371882", "hours": "10:00-22:00", "status": "休息中", "lng": 104.069852, "lat": 30.574844}, {"storeName": "影石Insta360天津梅江天街授权体验店", "province": "天津市", "city": "市辖区", "district": "西青区", "address": "天津市西青区津门湖街丽江道6号龙湖天津梅江天街1F-41", "phone": "17802285634", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 117.214305, "lat": 39.071115}, {"storeName": "影石Insta360成都IFS授权体验店", "province": "四川省", "city": "成都市", "district": "锦江区", "address": "四川省成都市锦江区红星路三段1号IFS六层L644K号商铺", "phone": "18328524253", "hours": "10:00-22:00", "status": "休息中", "lng": 104.09, "lat": 30.66}, {"storeName": "影石Insta360长春万象城授权体验店", "province": "吉林省", "city": "长春市", "district": "南关区", "address": "吉林省长春市南关区人民大街3388号华润置地长春万象城L547", "phone": "13804321983", "hours": "10:00-22:00", "status": "休息中", "lng": 125.33, "lat": 43.89}, {"storeName": "影石Insta360乌鲁木齐德汇万达授权体验店", "province": "新疆维吾尔自治区", "city": "乌鲁木齐市", "district": "沙依巴克区", "address": "新疆维吾尔自治区乌鲁木齐市沙依巴克区奇台路658号德汇万达一楼步行街-DJ/1步行街-015", "phone": "17797832111", "hours": "10:30-22:00", "status": "休息中", "lng": 87.59, "lat": 43.8}, {"storeName": "影石Insta360北京三里屯太古里授权体验店", "province": "北京市", "city": "市辖区", "district": "朝阳区", "address": "北京市朝阳区三里屯太古里西区W1-12", "phone": "17301391892", "hours": "10:00-22:00", "status": "休息中", "lng": 116.46, "lat": 39.94}, {"storeName": "影石Insta360深圳海岸城授权体验店", "province": "广东省", "city": "深圳市", "district": "南山区", "address": "深圳市南山区粤海街道办文心五路33号海岸城购物广场2层279-280店铺", "phone": "18923716021", "hours": "10:00-22:00", "status": "休息中", "lng": 113.94, "lat": 22.52}, {"storeName": "影石Insta360青岛海信广场授权体验店", "province": "山东省", "city": "青岛市", "district": "市南区", "address": "山东省青岛市澳门路117号海信广场2期LG层0303", "phone": "16653221285", "hours": "10:00-22:00", "status": "休息中", "lng": 120.4, "lat": 36.07}, {"storeName": "影石Insta360西安万象城授权体验店", "province": "陕西省", "city": "西安市", "district": "雁塔区", "address": "陕西省西安市雁塔区长安南路街道2899号万象城2楼", "phone": "17792900579", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 108.956013, "lat": 34.20114}, {"storeName": "影石Insta360西安赛格授权体验店", "province": "陕西省", "city": "西安市", "district": "雁塔区", "address": "陕西省西安市雁塔区小寨东路赛格国际购物中心2F", "phone": "13319299791", "hours": "10:00-22:00", "status": "休息中", "lng": 108.95, "lat": 34.23}, {"storeName": "影石Insta360重庆时代天街授权体验店", "province": "重庆市", "city": "市辖区", "district": "渝中区", "address": "重庆市渝中区长江二路174号时代天街C馆L-22号", "phone": "15310326067", "hours": "10:00-22:00", "status": "休息中", "lng": 106.52, "lat": 29.54}, {"storeName": "影石Insta360长沙万象城授权体验店", "province": "湖南省", "city": "长沙市", "district": "岳麓区", "address": "湖南省长沙市岳麓区桐梓坡路11号长沙万象城L1层L135号影石insta360门店", "phone": "15388069290", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 112.959052, "lat": 28.224867}, {"storeName": "影石Insta360深圳深业上城授权体验店", "province": "广东省", "city": "深圳市", "district": "福田区", "address": "广东深圳市福田区皇岗路5001号深业上城L2-233店铺", "phone": "13332968325", "hours": "10:00-22:00", "status": "休息中", "lng": 114.08, "lat": 22.56}, {"storeName": "影石Insta360浙江金华永盛授权体验店", "province": "浙江省", "city": "金华市", "district": "婺城区", "address": "浙江省金华市婺城区新华街67号永盛购物广场1楼53号商铺影石Insta360", "phone": "17376589677", "hours": "周一至周日 10:00-21:30", "status": "营业中", "lng": 119.659556, "lat": 29.107147}, {"storeName": "影石Insta360南昌万象城授权体验店", "province": "江西省", "city": "南昌市", "district": "红谷滩区", "address": "南昌市红谷滩区学府大道388号南昌万象城B110", "phone": "19917928376", "hours": "10:00-22:00", "status": "休息中", "lng": 115.85, "lat": 28.66}, {"storeName": "影石Insta360昆明恒隆授权体验店", "province": "云南省", "city": "昆明市", "district": "盘龙区", "address": "昆明市盘龙区拓东街道23号恒隆广场负一楼B134A-1室", "phone": "18987877998", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 102.728622, "lat": 25.043943}, {"storeName": "影石Insta360上海浦东嘉里城授权体验店", "province": "上海市", "city": "市辖区", "district": "浦东新区", "address": "上海市浦东新区花木路1378号嘉里城B102", "phone": "15502190925", "hours": "10:00-22:00", "status": "休息中", "lng": 121.57, "lat": 31.22}, {"storeName": "影石Insta360长沙星城天地授权体验店", "province": "湖南省", "city": "长沙市", "district": "雨花区", "address": "湖南省长沙市雨花区湘府东路二段398号步步高星城天地G层G041B商铺影石Insta360", "phone": "13007487821", "hours": "10.00-22.00", "status": "休息中", "lng": 113.02, "lat": 28.12}, {"storeName": "影石Insta360成都滨江天街授权体验店", "province": "四川省", "city": "成都市", "district": "成华区", "address": "四川省成都市成华区滨江天街L1-54号", "phone": "15719463231", "hours": "10:00-22:00", "status": "休息中", "lng": 104.13, "lat": 30.67}, {"storeName": "影石Insta360深圳大运天地授权体验店", "province": "广东省", "city": "深圳市", "district": "龙岗区", "address": "广东省深圳市龙岗区龙翔大道3001号深圳大运天地南区1栋CK004", "phone": "18123756437", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 114.226557, "lat": 22.700771}, {"storeName": "影石Insta360青岛崂山万象汇授权体验店", "province": "山东省", "city": "青岛市", "district": "崂山区", "address": "山东省青岛市崂山区深圳路与辽阳东路交汇崂山万象汇L109A", "phone": "18100375560", "hours": "10:00-22:00", "status": "休息中", "lng": 120.45, "lat": 36.12}, {"storeName": "影石Insta360宜宾万象天地授权体验店", "province": "四川省", "city": "宜宾市", "district": "叙州区", "address": "四川省宜宾市叙州区栀香路6号万象宜宾天地北馆L1层NL111影石专卖店", "phone": "17761000280", "hours": "10:00-22:30", "status": "休息中", "lng": 104.64, "lat": 28.73}, {"storeName": "影石Insta360重庆光环花园城授权体验店", "province": "重庆市", "city": "市辖区", "district": "渝北区", "address": "重庆市 渝北区 同茂大道236号光环花园城A区-L1层-9号铺位影石insta360授权体验店", "phone": "19389358580", "hours": "09:30-22:00", "status": "休息中", "lng": 106.6, "lat": 29.73}, {"storeName": "影石Insta360温州万象城授权体验店", "province": "浙江省", "city": "温州市", "district": "瓯海区", "address": "浙江省温州市瓯海区瓯海大道1999号温州万象城 5楼 L515A影石Insta360", "phone": "19957016377", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 120.692041, "lat": 27.958586}, {"storeName": "影石Insta360桂林万象城授权体验店", "province": "广西壮族自治区", "city": "桂林市", "district": "秀峰区", "address": "广西省桂林市秀峰区红岭路1号桂林万象城L153影石Insta360", "phone": "19111445159", "hours": "10：00-22：00", "status": "休息中", "lng": 110.28, "lat": 25.27}, {"storeName": "影石Insta360泰州万象城授权体验店", "province": "江苏省", "city": "泰州市", "district": "泰州医药高新技术产业开发区", "address": "江苏省泰州市医药高新区永定东路399号泰州万象城C122", "phone": "18115232316", "hours": "周日-周四营业时间：10：00-21：30，周五周六：10：00-22：00", "status": "休息中", "lng": 119.93, "lat": 32.45}, {"storeName": "影石Insta360成都天府和悦广场授权体验店", "province": "四川省", "city": "成都市", "district": "双流区", "address": "四川省成都市双流区四川省成都市双流区麓山大道二段199号天府和悦广场一楼中庭影石店", "phone": "15208244550", "hours": "10:00-22:00", "status": "休息中", "lng": 104.09, "lat": 30.49}, {"storeName": "影石Insta360柳州万象城授权体验店", "province": "广西壮族自治区", "city": "柳州市", "district": "鱼峰区", "address": "广西省柳州市鱼峰区文昌路17号柳州万象城L107号铺", "phone": "19101120360", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 109.457025, "lat": 24.329071}, {"storeName": "影石Insta360武汉万象城授权体验店", "province": "湖北省", "city": "武汉市", "district": "江岸区", "address": "湖北省武汉市江岸区建设大道668号武汉万象城6FD603店铺", "phone": "15795648152", "hours": "10：00-22：00", "status": "休息中", "lng": 114.29, "lat": 30.61}, {"storeName": "影石Insta360淮安万象城授权体验店", "province": "江苏省", "city": "淮安市", "district": "清江浦区", "address": "江苏省淮安市清江浦区翔宇中道170号淮安万象城 L111 影石insta 360", "phone": "19105281600", "hours": "10:00-21:30", "status": "休息中", "lng": 119.05, "lat": 33.61}, {"storeName": "影石Insta360上海港汇恒隆授权体验店", "province": "上海市", "city": "市辖区", "district": "徐汇区", "address": "上海市徐汇区虹桥路1号港汇恒隆广场4楼409D柜台", "phone": "17601371794", "hours": "10:00-22:00", "status": "休息中", "lng": 121.44, "lat": 31.2}, {"storeName": "影石Insta360上海新天地东台里授权体验店", "province": "上海市", "city": "市辖区", "district": "黄浦区", "address": "上海市黄浦区吉安路111号新天地东台里D-L157", "phone": "17621776156", "hours": "10:00-22:00", "status": "休息中", "lng": 121.49, "lat": 31.23}, {"storeName": "影石Insta360上海龙湖宝山天街授权体验店", "province": "上海市", "city": "市辖区", "district": "宝山区", "address": "上海市宝山区顾村镇丹霞山路50弄1号龙湖宝山天街1F-18", "phone": "18738982586", "hours": "10:00-22:00", "status": "休息中", "lng": 121.37, "lat": 31.36}, {"storeName": "影石Insta360中山大信新都汇授权体验店", "province": "广东省", "city": "中山市", "district": "石岐街道", "address": "广东省中山市石岐区莲员东路2号首层1FB15号商铺", "phone": "13392592138", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 113.388629, "lat": 22.537156}, {"storeName": "影石Insta360广州融创授权体验店", "province": "广东省", "city": "广州市", "district": "花都区", "address": "广州市花都区凤凰北路融创茂一楼1082铺(影石Insta360)", "phone": "15899955380", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 113.239164, "lat": 23.432645}, {"storeName": "影石Insta360沈阳三台子万象汇授权体验店", "province": "辽宁省", "city": "沈阳市", "district": "皇姑区", "address": "辽宁省沈阳市皇姑区黄河北大街33号华润置地沈阳三台子万象汇L183", "phone": "13889182947", "hours": "10:00-22:00", "status": "休息中", "lng": 123.42, "lat": 41.88}, {"storeName": "影石Insta360广州琶洲保利授权体验店", "province": "广东省", "city": "广州市", "district": "海珠区", "address": "广东省广州市海珠区琶洲蟠龙新街2号保利广场购物中心1层1061铺", "phone": "19128896236", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 113.390171, "lat": 23.105166}, {"storeName": "影石Insta360济宁万象汇授权体验店", "province": "山东省", "city": "济宁市", "district": "济宁高新技术产业开发区", "address": "山东省济宁市高新区柳行街道海川路77号济宁万象汇L135", "phone": "15318418366", "hours": "周一至周四：10：00-21：30；周五周六周日：10：00-22：00", "status": "休息中", "lng": 116.71, "lat": 35.42}, {"storeName": "影石Insta360沈阳万象城授权体验店", "province": "辽宁省", "city": "沈阳市", "district": "和平区", "address": "辽宁省沈阳市和平区青年大街 288号华润置地沈阳万象城DL581", "phone": "18302438825", "hours": "10:00-21:30", "status": "休息中", "lng": 123.44, "lat": 41.78}, {"storeName": "影石Insta360绍兴银泰授权体验店", "province": "浙江省", "city": "绍兴市", "district": "越城区", "address": "浙江省绍兴市越城区解放南路777号金帝银泰城1楼AF1-3585影石Insta360", "phone": "17398010377", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 120.586616, "lat": 29.991221}, {"storeName": "影石Insta360西安荟聚授权体验店", "province": "陕西省", "city": "西安市", "district": "雁塔区", "address": "西安市雁塔区子午大道6号西安荟聚中心(LG1)层 影石 Insta360", "phone": "17391881158", "hours": "10:00-22:00", "status": "休息中", "lng": 108.91, "lat": 34.18}, {"storeName": "影石Insta360西宁王府井授权体验店", "province": "青海省", "city": "西宁市", "district": "城西区", "address": "青海省西宁市城西区五四西路68号王府井L1-113号商铺", "phone": "18997224949", "hours": "周一至周日 10:00-21:30", "status": "营业中", "lng": 101.727025, "lat": 36.651782}, {"storeName": "影石Insta360北京SKP授权体验店", "province": "北京市", "city": "市辖区", "district": "朝阳区", "address": "北京市朝阳区建国路87号北京SKPF5层D5297影石Insta360", "phone": "18610474243", "hours": "10:00-22:00", "status": "休息中", "lng": 116.49, "lat": 39.92}, {"storeName": "影石Insta360青岛凯德MALL授权体验店", "province": "山东省", "city": "青岛市", "district": "市北区", "address": "山东省青岛市市北区黑龙江南路18号凯德mall新都心01层15号", "phone": "13730949877", "hours": "10:00-22:00", "status": "休息中", "lng": 120.4, "lat": 36.12}, {"storeName": "影石Insta360烟台振华商厦授权体验店", "province": "山东省", "city": "烟台市", "district": "芝罘区", "address": "山东省烟台市芝罘区西大街18号振华精品商厦1F-B01-2", "phone": "15684080488", "hours": "10:00-22:00", "status": "休息中", "lng": 121.39, "lat": 37.55}, {"storeName": "影石Insta360海口天街授权体验店", "province": "海南省", "city": "海口市", "district": "龙华区", "address": "龙华区南海大道15号龙湖海口天街C-1F-29号影石Insta360", "phone": "18078965924", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 110.341368, "lat": 20.003582}, {"storeName": "影石Insta360北京首都机场T3授权体验店", "province": "北京市", "city": "市辖区", "district": "朝阳区", "address": "北京市朝阳区首都机场路首都国际机场T3航站楼", "phone": "17610848823", "hours": "06:00-22:00", "status": "休息中", "lng": 116.61, "lat": 40.09}, {"storeName": "影石Insta360西安SKP授权体验店", "province": "陕西省", "city": "西安市", "district": "碑林区", "address": "陕西省西安市碑林区长安北路261号SKP 4楼影石", "phone": "13032931126", "hours": "10：00-22：00", "status": "休息中", "lng": 108.96, "lat": 34.25}, {"storeName": "影石Insta360福州烟台山授权体验店", "province": "福建省", "city": "福州市", "district": "仓山区", "address": "福建省福州仓山区仓前街道仓前路 7 号 M15-L1-01", "phone": "18959085930", "hours": "周一至周日  9:30-22:30", "status": "营业中", "lng": 119.318811, "lat": 26.051399}, {"storeName": "影石Insta360南昌铜锣湾商场授权体验店", "province": "江西省", "city": "南昌市", "district": "红谷滩区", "address": "江西省南昌市红谷滩新区庐山南大道369号南昌铜锣湾广场1F L1-D08", "phone": "19044575951", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 115.874175, "lat": 28.706219}, {"storeName": "影石Insta360杭州萧山万象汇授权体验店", "province": "浙江省", "city": "杭州市", "district": "萧山区", "address": "浙江省杭州市萧山区北干街道金城路927号华润万象汇负一楼B1S05影石Insta360", "phone": "18967190850", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 120.274837, "lat": 30.187848}, {"storeName": "影石Insta360合肥万象城授权体验店", "province": "安徽省", "city": "合肥市", "district": "蜀山区", "address": "安徽省合肥市政务区潜山路111号合肥万象城L0506A", "phone": "13339016921", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 117.237026, "lat": 31.805265}, {"storeName": "影石Insta360常州武进吾悦授权体验店", "province": "江苏省", "city": "常州市", "district": "武进区", "address": "江苏省常州市武进区湖塘镇武宜北路19号吾悦广场1层1046号商铺", "phone": "18052719285", "hours": "周日-周四10：00-21：30；周五-周六10：00-22：00", "status": "休息中", "lng": 119.95, "lat": 31.73}, {"storeName": "影石Insta360合肥包河万象汇授权体验店", "province": "安徽省", "city": "合肥市", "district": "包河区", "address": "合肥市包河区包河大道和龙川路交叉口包河万象汇D107影石Insta360", "phone": "18756967829", "hours": "10：00-22：00", "status": "休息中", "lng": 117.31, "lat": 31.81}, {"storeName": "影石Insta360北京亦庄龙湖天街授权体验店", "province": "北京市", "city": "市辖区", "district": "大兴区", "address": "北京市大兴区博兴八路与兴海路交叉口龙湖亦庄天街1F-30A影石Insta360", "phone": "17610268200", "hours": "10:00-22:00", "status": "休息中", "lng": 116.5, "lat": 39.76}, {"storeName": "影石Insta360成都科华王府井授权体验店", "province": "四川省", "city": "成都市", "district": "武侯区", "address": "四川省成都市武侯区科华路王府井1楼-B13", "phone": "19180684465", "hours": "10：00-22：00", "status": "休息中", "lng": 104.08, "lat": 30.62}, {"storeName": "影石Insta360大连罗斯福授权体验店", "province": "辽宁省", "city": "大连市", "district": "沙河口区", "address": "辽宁省大连市沙河口区西安路街道139号罗斯福商场一层JT-05", "phone": "15841764066", "hours": "9:30-21:30", "status": "休息中", "lng": 121.59, "lat": 38.92}, {"storeName": "影石Insta360重庆大悦城授权体验店", "province": "重庆市", "city": "市辖区", "district": "渝北区", "address": "重庆市渝北区大悦城铺位号L126AC", "phone": "19389381968", "hours": "9：30-22：00", "status": "休息中", "lng": 106.58, "lat": 29.73}, {"storeName": "影石Insta360武汉武昌万象城授权体验店", "province": "湖北省", "city": "武汉市", "district": "武昌区", "address": "湖北省武汉市武昌区和平大道619号武汉武昌万象城L2058影石Insta360", "phone": "13720324965", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 114.332387, "lat": 30.590367}, {"storeName": "影石Insta360保定爱情广场授权体验店", "province": "河北省", "city": "保定市", "district": "莲池区", "address": "河北省保定市莲池区朝阳南大街2188号保定爱情广场一层影石（长城魏牌旁边）", "phone": "16630290058", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 115.470926, "lat": 38.827963}, {"storeName": "影石Insta360郑州正弘汇授权体验店", "province": "河南省", "city": "郑州市", "district": "郑州高新技术产业开发区", "address": "河南省郑州市高新区科学大道正弘汇一层L147", "phone": "15639725225", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 113.573324, "lat": 34.814935}, {"storeName": "影石Insta360拉萨王府井授权体验店", "province": "西藏自治区", "city": "拉萨市", "district": "堆龙德庆区", "address": "西藏拉萨市柳梧新区北京大道10号G-1F-P034B影石授权体验店", "phone": "18689189645", "hours": "周一至周日 11:00-22:00", "status": "营业中", "lng": 91.082205, "lat": 29.626729}, {"storeName": "影石Insta360福州中骏世界城授权体验店", "province": "福建省", "city": "福州市", "district": "仓山区", "address": "福建省福州市仓山区中骏世界城3号门1层影石Insta360", "phone": "18558782799", "hours": "10：00-22：00", "status": "休息中", "lng": 119.33, "lat": 26.04}, {"storeName": "影石Insta360西安曲江创意谷授权体验店", "province": "陕西省", "city": "西安市", "district": "雁塔区", "address": "陕西省西安市雁塔区雁翔路曲江创意谷西街LG-14 影石门店（潮宏基对面）", "phone": "18049489891", "hours": "10：00-22：00", "status": "休息中", "lng": 109.02, "lat": 34.22}, {"storeName": "影石Insta360太原万象城授权体验店", "province": "山西省", "city": "太原市", "district": "万柏林区", "address": "山西省太原市万柏林区长风西街街道长风商务区长兴路5号太原万象城L-230", "phone": "19324072230", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 112.534999, "lat": 37.814142}, {"storeName": "影石Insta360日照万象汇授权体验店", "province": "山东省", "city": "日照市", "district": "东港区", "address": "山东省日照市东港区烟台路 176 号华润万象汇L-123", "phone": "13396338198", "hours": "10：00-22：00", "status": "休息中", "lng": 119.54, "lat": 35.43}, {"storeName": "影石Insta360成都来福士授权体验店", "province": "四川省", "city": "成都市", "district": "武侯区", "address": "成都市武侯区人民南路四段3号正门L1k03", "phone": "18980049940", "hours": "10：00-22：00", "status": "休息中", "lng": 104.07, "lat": 30.64}, {"storeName": "影石Insta360贵阳万象城授权体验店", "province": "贵州省", "city": "贵阳市", "district": "南明区", "address": "贵州省贵阳市南明区万象城DLG18", "phone": "18085006401", "hours": "10：00-22：00", "status": "休息中", "lng": 106.71, "lat": 26.57}, {"storeName": "影石Insta360北京顺义华联授权体验店", "province": "北京市", "city": "市辖区", "district": "顺义区", "address": "北京市顺义区新顺南大街8号院1栋一层F1-55A（华联商厦）影石Insta360", "phone": "15313729099", "hours": "10:00-22:00", "status": "休息中", "lng": 116.66, "lat": 40.13}, {"storeName": "影石Insta360上海第一八佰伴授权体验店", "province": "上海市", "city": "市辖区", "district": "浦东新区", "address": "上海市浦东新区-张杨路501号1楼BO1-01F01-01-0068铺位", "phone": "19115072137", "hours": "10:00-22:00", "status": "休息中", "lng": 121.52, "lat": 31.23}, {"storeName": "影石Insta360上海五角场万达授权体验店", "province": "上海市", "city": "市辖区", "district": "杨浦区", "address": "上海市杨浦区国宾路36号万达广场B座1楼1121", "phone": "18096512026", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 121.520069, "lat": 31.307096}, {"storeName": "影石Insta360深圳中航城君尚授权体验店", "province": "广东省", "city": "深圳市", "district": "福田区", "address": "广东省深圳市福田区中航路1号中航城君尚购物中心", "phone": "17724721379", "hours": "10：00-22：00", "status": "休息中", "lng": 114.09, "lat": 22.55}, {"storeName": "影石Insta360长沙永旺梦乐城授权体验店", "province": "湖南省", "city": "长沙市", "district": "望城区", "address": "湖南省长沙市湘江新区雷锋大道118号永旺梦乐城湘江新区店1F136-1", "phone": "19118837081", "hours": "10:00-22:00", "status": "休息中", "lng": 112.89, "lat": 28.28}, {"storeName": "影石Insta360北京西三旗万象汇授权体验店", "province": "北京市", "city": "市辖区", "district": "海淀区", "address": "北京市海淀区建材城东路33号西三旗万象汇1F-L119影石Insta360", "phone": "13717999261", "hours": "10:00-22:00", "status": "休息中", "lng": 116.37, "lat": 40.07}, {"storeName": "影石Insta360天津西青大悦汇授权体验店", "province": "天津市", "city": "市辖区", "district": "西青区", "address": "天津市西青区中北镇万卉路5号西青大悦汇A馆一层影石", "phone": "15302198315", "hours": "10:00-22:00", "status": "休息中", "lng": 117.1, "lat": 39.15}, {"storeName": "影石Insta360宝鸡开元商城授权体验店", "province": "陕西省", "city": "宝鸡市", "district": "渭滨区", "address": "陕西省宝鸡市渭滨区经二路154号宝鸡开元商场F1层1F-C-01号", "phone": "13239109062", "hours": "10:00-21:30", "status": "休息中", "lng": 107.16, "lat": 34.38}, {"storeName": "影石Insta360西安龙首印象城授权体验店", "province": "陕西省", "city": "西安市", "district": "未央区", "address": "陕西省西安市未央区龙首北路龙首印象城L1影石（vivo隔壁）", "phone": "15353622900", "hours": "10:00-22:00", "status": "休息中", "lng": 108.95, "lat": 34.3}, {"storeName": "影石Insta360宁波余姚五彩城授权体验店", "province": "浙江省", "city": "宁波市", "district": "余姚市", "address": "浙江省宁波市余姚市城东路888号 五彩城一楼 铺位L125A影石 Insta360", "phone": "19012828055", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 121.186515, "lat": 30.073576}, {"storeName": "影石Insta360珠海万象汇授权体验店", "province": "广东省", "city": "珠海市", "district": "香洲区", "address": "广东省珠海市香洲区银桦路102号珠海万象汇D-L1017", "phone": "13360775359", "hours": "10：00-22：00", "status": "休息中", "lng": 113.57, "lat": 22.28}, {"storeName": "影石Insta360重庆龙湖U城天街授权体验店", "province": "重庆市", "city": "市辖区", "district": "沙坪坝区", "address": "重庆市沙坪坝区大学城北路97号U城天街B馆LG层15b", "phone": "19123419775", "hours": "10：00-22：00", "status": "休息中", "lng": 106.3, "lat": 29.61}, {"storeName": "影石Insta360广州美林MLIVE天地授权体验店", "province": "广东省", "city": "广州市", "district": "天河区", "address": "广州市天河区黄埔大道东 663 号美林M·LIVE天地商铺1F010-A", "phone": "15360633981", "hours": "10：00-22：00", "status": "休息中", "lng": 113.42, "lat": 23.11}, {"storeName": "影石Insta360重庆北城天街授权体验店", "province": "重庆市", "city": "市辖区", "district": "江北区", "address": "重庆市江北区观音桥街道北城天街X馆-B1-42号影石授权专卖店", "phone": "19389393168", "hours": "10:00-22:00", "status": "休息中", "lng": 106.54, "lat": 29.58}, {"storeName": "影石Insta360重庆龙湖金沙天街授权体验店", "province": "重庆市", "city": "市辖区", "district": "沙坪坝区", "address": "重庆市沙坪坝区北站东路188号金沙天街B馆1F50b", "phone": "17623605122", "hours": "10：00-22：00", "status": "休息中", "lng": 106.47, "lat": 29.56}, {"storeName": "影石Insta360重庆光环购物广场授权体验店", "province": "重庆市", "city": "市辖区", "district": "渝北区", "address": "重庆市两江新区光环购物公园L1-01B02号", "phone": "19389364159", "hours": "10：00-22：00", "status": "休息中", "lng": 106.54, "lat": 29.66}, {"storeName": "影石Insta360江门大融城授权体验店", "province": "广东省", "city": "江门市", "district": "蓬江区", "address": "广东省江门市蓬江区大融城f051铺影石", "phone": "17520313410", "hours": "10：00-22：00", "status": "休息中", "lng": 113.09, "lat": 22.62}, {"storeName": "影石Insta360呼和浩特万象城授权体验店", "province": "内蒙古自治区", "city": "呼和浩特市", "district": "玉泉区", "address": "内蒙古自治区呼和浩特市玉泉区万象城L4 DL401", "phone": "15247170607", "hours": "10:00-22:00", "status": "休息中", "lng": 111.68, "lat": 40.81}, {"storeName": "影石Insta360北京中关村大融城授权体验店", "province": "北京市", "city": "市辖区", "district": "海淀区", "address": "北京市海淀区中关村大街15-11号大融城东区LG1-42影石Insta360", "phone": "13716119176", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 116.321758, "lat": 39.985504}, {"storeName": "影石Insta360乌鲁木齐CCMALL授权体验店", "province": "新疆维吾尔自治区", "city": "乌鲁木齐市", "district": "天山区", "address": "新疆乌鲁木齐市天山区光明路39号CCMALL时代广场 LG层G-W008号商铺", "phone": "18160616147", "hours": "周一-周四：11：00-22：00；周五到周日：11：00-22：30", "status": "休息中", "lng": 87.61, "lat": 43.81}, {"storeName": "影石Insta360哈尔滨松雷广场授权体验店", "province": "黑龙江省", "city": "哈尔滨市", "district": "南岗区", "address": "黑龙江省哈尔滨市南岗区东大直街329号松雷广场B1F", "phone": "15088892777", "hours": "9：30-21：30", "status": "休息中", "lng": 126.65, "lat": 45.76}, {"storeName": "影石Insta360南阳万悦城授权体验店", "province": "河南省", "city": "南阳市", "district": "卧龙区", "address": "河南省南阳市卧龙区南都路与范蠡东路交叉口西南角万悦城一楼一号门影石Insta360", "phone": "13700777852", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 112.58731, "lat": 33.019826}, {"storeName": "影石Insta360乌鲁木齐经开万达授权体验店", "province": "新疆维吾尔自治区", "city": "乌鲁木齐市", "district": "头屯河区", "address": "新疆乌鲁木齐市头屯河区玄武湖路999 号乌鲁木齐经开万达广场 1F", "phone": "18160610174", "hours": "11:00-22:00", "status": "休息中", "lng": 87.52, "lat": 43.85}, {"storeName": "影石Insta360晋江SM授权体验店", "province": "福建省", "city": "泉州市", "district": "晋江市", "address": "福建省晋江市福兴路684号1号门1层影石Insta360", "phone": "18959760259", "hours": "10:00-22:00", "status": "休息中", "lng": 118.57, "lat": 24.78}, {"storeName": "影石Insta360深圳万象前海授权体验店", "province": "广东省", "city": "深圳市", "district": "南山区", "address": "广东省深圳市南山区前海深港现代服务业合作区桂湾四路与梦海大道交叉深圳万象前海B148", "phone": "0755-81450534", "hours": "周日至周四 10:00-22:00; 周五至周六 10:00-22:30", "status": "营业中", "lng": 113.906804, "lat": 22.537369}, {"storeName": "影石Insta360佛山禅西环宇城授权体验店", "province": "广东省", "city": "佛山市", "district": "禅城区", "address": "佛山市禅城区季华一路21号东基婵西环宇城购物中心L1层L1-123", "phone": "18219078015", "hours": "10:00-22:00", "status": "休息中", "lng": 113.06, "lat": 23.02}, {"storeName": "影石Insta360佛山千灯湖环宇城授权体验店", "province": "广东省", "city": "佛山市", "district": "南海区", "address": "广东省佛山市南海区桂城街道桂澜中路18号中海环宇城购物中心B1层B129", "phone": "18925020224", "hours": "10:00-22:00", "status": "休息中", "lng": 113.16, "lat": 23.05}, {"storeName": "影石Insta360佛山金铂中心授权体验店", "province": "广东省", "city": "佛山市", "district": "南海区", "address": "广东省佛山市南海区桂城街道桂业路88号金铂商业中心一层109号商铺", "phone": "18923137090", "hours": "10:00-22:00", "status": "休息中", "lng": 113.16, "lat": 23.02}, {"storeName": "影石Insta360新乡胖东来授权体验店", "province": "河南省", "city": "新乡市", "district": "红旗区", "address": "河南省新乡市红旗区牧野大道与平原路交叉口西南角三胖店", "phone": "13526768392", "hours": "10:00-22:00", "status": "休息中", "lng": 113.92, "lat": 35.31}, {"storeName": "影石Insta360南京江北虹悦城授权体验店", "province": "江苏省", "city": "南京市", "district": "浦口区", "address": "南京市浦口区龙华路1号江北虹悦城1F-34", "phone": "18860847714", "hours": "10:00-22:00", "status": "休息中", "lng": 118.65, "lat": 32.07}, {"storeName": "影石Insta360北京朝阳大悦城授权体验店", "province": "北京市", "city": "市辖区", "district": "朝阳区", "address": "北京市朝阳区朝阳北路101号朝阳大悦城B1-66+67影石Insta360", "phone": "18610474243", "hours": "10:00-22:00", "status": "休息中", "lng": 116.53, "lat": 39.93}, {"storeName": "影石Insta360威海威高广场授权体验店", "province": "山东省", "city": "威海市", "district": "环翠区", "address": "山东省威海市新威路17号威高购物中心L-K6", "phone": "13181123122", "hours": "10:00-22:00", "status": "休息中", "lng": 122.13, "lat": 37.51}, {"storeName": "影石Insta360新疆伊犁环球港授权体验店", "province": "新疆维吾尔自治区", "city": "伊犁哈萨克自治州", "district": "伊宁市", "address": "新疆维吾尔自治区伊犁哈萨克自治州伊宁市解放路环球港商场1楼insta360专卖店", "phone": "19390970803", "hours": "11:00-22:30", "status": "休息中", "lng": 81.32, "lat": 43.93}, {"storeName": "影石Insta360杭州临平银泰授权体验店", "province": "浙江省", "city": "杭州市", "district": "临平区", "address": "浙江省杭州市临平区世纪大道118号临平银泰城1楼L1-103-2影石Insta360", "phone": "19012778755", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 120.308283, "lat": 30.410697}, {"storeName": "影石Insta360北京房山熙悦天街授权体验店", "province": "北京市", "city": "市辖区", "district": "房山区", "address": "北京市房山区长阳镇长于大街28号院熙悦天街1F-20 影石Insta360", "phone": "18701515032", "hours": "10:00-22:00", "status": "休息中", "lng": 116.19, "lat": 39.74}, {"storeName": "影石Insta360合肥瑶海万象天地授权体验店", "province": "安徽省", "city": "合肥市", "district": "瑶海区", "address": "合肥市瑶海区铜陵路街道长江东路瑶海天地L124", "phone": "13339085889", "hours": "10:00-22:00", "status": "休息中", "lng": 117.34, "lat": 31.87}, {"storeName": "影石Insta360东莞万象滨海授权体验店", "province": "广东省", "city": "东莞市", "district": "东莞滨海湾新区", "address": "东莞市滨海湾新区东湾大道滨海湾段19号滨海广场SL116", "phone": "13316686097", "hours": "10：00-22：00", "status": "休息中", "lng": 113.75, "lat": 22.76}, {"storeName": "影石Insta360长沙荟聚授权体验店", "province": "湖南省", "city": "长沙市", "district": "岳麓区", "address": "湖南省长沙市岳麓区洋湖路253号长沙荟聚L1层1G09T（影石Insta360商铺）", "phone": "17377878911", "hours": "10:00-22:00", "status": "休息中", "lng": 112.94, "lat": 28.12}, {"storeName": "影石Insta360南京万象天地授权体验店", "province": "江苏省", "city": "南京市", "district": "秦淮区", "address": "南京市秦淮区中山南路666号南京万象天地B145C", "phone": "17705154407", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 118.78657, "lat": 32.027893}, {"storeName": "影石Insta360深圳布吉万象汇授权体验店", "province": "广东省", "city": "深圳市", "district": "龙岗区", "address": "广东省深圳市龙岗区布吉街道翔鸽路2号", "phone": "18926585750", "hours": "10:00-22:00", "status": "休息中", "lng": 114.14, "lat": 22.6}, {"storeName": "影石Insta360西安龙湖长乐天街授权体验店", "province": "陕西省", "city": "西安市", "district": "新城区", "address": "陕西省西安市新城区万寿北路58号长乐龙湖天街1F-13", "phone": "17791296686", "hours": "10:00-22:00", "status": "休息中", "lng": 109.02, "lat": 34.29}, {"storeName": "影石Insta360茂名东荟城授权体验店", "province": "广东省", "city": "茂名市", "district": "茂南区", "address": "广东省茂名市油城十路1号大院6,7,8首层286-1，287-1号", "phone": "17303036071", "hours": "10:00-22:00", "status": "休息中", "lng": 110.96, "lat": 21.67}, {"storeName": "影石Insta360沈阳中街恒隆授权体验店", "province": "辽宁省", "city": "沈阳市", "district": "沈河区", "address": "辽宁省沈阳市沈河区中街路128号沈阳皇城恒隆广场1楼", "phone": "18842498146", "hours": "周一至周日 10:00-21:30", "status": "营业中", "lng": 123.461536, "lat": 41.809041}, {"storeName": "影石Insta360海口吾悦广场授权体验店", "province": "海南省", "city": "海口市", "district": "龙华区", "address": "海南省海口市龙华区迎宾路18号吾悦广场1011-1号", "phone": "15289989600", "hours": "10:00-22:00", "status": "休息中", "lng": 110.35, "lat": 19.98}, {"storeName": "影石Insta360上海长宁荟聚授权体验店", "province": "上海市", "city": "市辖区", "district": "长宁区", "address": "上海市长宁区金钟路788号上海荟聚中心L1层01B13号", "phone": "17828297885", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 121.363552, "lat": 31.22749}, {"storeName": "影石Insta360济南万象城授权体验店", "province": "山东省", "city": "济南市", "district": "历下区", "address": "山东省济南市历下区经十路11111号济南万象城5L521A影石Insta360门店", "phone": "19353123698", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 117.106297, "lat": 36.664793}, {"storeName": "影石Insta360苏州东吴天街授权体验店", "province": "江苏省", "city": "苏州市", "district": "吴中区", "address": "江苏省苏州市吴中区东吴南路179号A-1F-04", "phone": "15755889233", "hours": "10:00-22:00", "status": "休息中", "lng": 120.63, "lat": 31.26}, {"storeName": "影石Insta360遵义吾悦广场授权体验店", "province": "贵州省", "city": "遵义市", "district": "红花岗区", "address": "贵州省遵义市红花岗区共青一路 遵义吾悦广场1012/1013", "phone": "18208407427", "hours": "10:00-22:00", "status": "休息中", "lng": 106.89, "lat": 27.66}, {"storeName": "影石Insta360北京东坝万达授权体验店", "province": "北京市", "city": "市辖区", "district": "昌平区", "address": "北京市昌平区北清路王府街1号王府公寓二区24号楼", "phone": "15701363667", "hours": "10:00-22:00", "status": "休息中", "lng": 116.41, "lat": 40.11}, {"storeName": "影石Insta360海口远大购物中心授权体验店", "province": "海南省", "city": "海口市", "district": "秀英区", "address": "海南省海口市秀英区长滨四路街7号海口远大购物中心一层B1-10-1", "phone": "13976453245", "hours": "10:00-22:00", "status": "休息中", "lng": 110.2, "lat": 20.05}, {"storeName": "影石Insta360北京万柳华联授权体验店", "province": "北京市", "city": "市辖区", "district": "海淀区", "address": "北京市海淀区北京华联万柳购物中心F1-74", "phone": "17600188902", "hours": "9:30-21:30", "status": "休息中", "lng": 116.3, "lat": 39.98}, {"storeName": "影石Insta360盐城聚龙湖金鹰授权体验店", "province": "江苏省", "city": "盐城市", "district": "盐都区", "address": "江苏省盐城市城南新区新都街道解放南路268号盐城金鹰聚龙湖购物中心A-F1087", "phone": "13814384448", "hours": "周一-周四10：00-21：30；周五-周日10：00-20：00", "status": "休息中", "lng": 120.17, "lat": 33.35}, {"storeName": "影石Insta360深圳光明蓝鲸世界授权体验店", "province": "广东省", "city": "深圳市", "district": "光明区", "address": "深圳市光明区龙光蓝鲸世界 L1 层 L1-39 号商铺", "phone": "17788817110", "hours": "10:00-22:00", "status": "休息中", "lng": 113.94, "lat": 22.75}, {"storeName": "影石Insta360太原钟楼街授权体验店", "province": "山西省", "city": "太原市", "district": "迎泽区", "address": "山西省太原市迎泽区钟楼街影石Insta360", "phone": "19036172311", "hours": "10:00-22:00", "status": "休息中", "lng": 112.58, "lat": 37.9}, {"storeName": "影石Insta360深圳罗湖万象城授权体验店", "province": "广东省", "city": "深圳市", "district": "罗湖区", "address": "深圳市罗湖区桂园街道书城路1号深圳万象城三期三层T356号影石Insta360店铺", "phone": "13352972937", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 114.1174, "lat": 22.545556}, {"storeName": "影石Insta360深圳福田卓悦汇授权体验店", "province": "广东省", "city": "深圳市", "district": "福田区", "address": "深圳市福田区中康路卓悦汇商场B1楼B1-04", "phone": "15815535220", "hours": "10：00-22：00", "status": "休息中", "lng": 114.07, "lat": 22.58}, {"storeName": "影石Insta360银川新华百货CCMALL授权体验店", "province": "宁夏回族自治区", "city": "银川市", "district": "兴庆区", "address": "宁夏银川市兴庆区解放东街50号新华百货CCMALL一楼", "phone": "19909579947", "hours": "周一-周五：10:00-21:30；周六-周日：9:30-22:00", "status": "休息中", "lng": 106.29, "lat": 38.47}, {"storeName": "影石Insta360北京悠唐广场授权体验店", "province": "北京市", "city": "市辖区", "district": "朝阳区", "address": "北京市朝阳门外悠唐生活广场东区一层影石", "phone": "13141020507", "hours": "10:00-22:00", "status": "休息中", "lng": 116.44, "lat": 39.93}, {"storeName": "影石Insta360青岛城阳万象汇授权体验店", "province": "山东省", "city": "青岛市", "district": "城阳区", "address": "山东省青岛市城阳区正阳中路157号万象汇", "phone": "15624147464", "hours": "10:00-22:00", "status": "休息中", "lng": 120.42, "lat": 36.31}, {"storeName": "影石Insta360大连柏威年授权体验店", "province": "辽宁省", "city": "大连市", "district": "中山区", "address": "辽宁省大连市中山区中山路129号柏威年3L3021", "phone": "15940939664", "hours": "9:30-21:30", "status": "休息中", "lng": 121.64, "lat": 38.92}, {"storeName": "影石Insta360深圳万丰海岸城授权体验店", "province": "广东省", "city": "深圳市", "district": "宝安区", "address": "深圳市宝安区新桥街道万丰中路与丰山三路交界处万丰海岸城瑧园一层E131号", "phone": "0755-23253152", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 113.827907, "lat": 22.718277}, {"storeName": "影石Insta360南京城北万象汇授权体验店", "province": "江苏省", "city": "南京市", "district": "栖霞区", "address": "江苏省南京市栖霞区栖霞大道106，108号城北万象汇B馆一楼L1158B", "phone": "18852676686", "hours": "10:00-22:00", "status": "休息中", "lng": 118.84, "lat": 32.13}, {"storeName": "影石Insta360武汉销品茂授权体验店", "province": "湖北省", "city": "武汉市", "district": "武昌区", "address": "湖北省武汉市武昌区徐东大街18号销品茂1层1-162号", "phone": "18164042757", "hours": "周日至周四 10:00-21:30; 周五至周六 10:00-22:00", "status": "营业中", "lng": 114.34905, "lat": 30.594778}, {"storeName": "影石Insta360佛山顺德万象汇授权体验店", "province": "广东省", "city": "佛山市", "district": "顺德区", "address": "广东省佛山市顺德区大良街道驹荣路顺德万象汇B108影石Insta360", "phone": "19042448140", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 113.285045, "lat": 22.840003}, {"storeName": "影石Insta360淄博万象汇授权体验店", "province": "山东省", "city": "淄博市", "district": "张店区", "address": "山东省淄博市张店区金晶大道66号淄博万象汇1楼L132c影石店", "phone": "15553307652", "hours": "周日-周四10:00-21:30；周五-周六10:00-22:00", "status": "休息中", "lng": 118.07, "lat": 36.81}, {"storeName": "影石Insta360宜昌国贸授权体验店", "province": "湖北省", "city": "宜昌市", "district": "夷陵区", "address": "湖北省宜昌市西陵区东山大道106号国贸大厦北楼一楼B-L01-0012店铺影石Insta360", "phone": "19071747341", "hours": "周日至周四 10:00-21:30; 周五至周六 10:00-22:00", "status": "营业中", "lng": 111.303023, "lat": 30.708051}, {"storeName": "影石Insta360长春欧亚卖场授权体验店", "province": "吉林省", "city": "长春市", "district": "朝阳区", "address": "吉林省长春市朝阳区开运街欧亚卖场L1", "phone": "13514401081", "hours": "9:30-20:00", "status": "休息中", "lng": 125.25, "lat": 43.85}, {"storeName": "影石Insta360北京荟聚授权体验店", "province": "北京市", "city": "市辖区", "district": "大兴区", "address": "北京市大兴区欣宁街15号院1号楼1层01E134B影石Insta360", "phone": "16788999490", "hours": "10:00-22:00", "status": "休息中", "lng": 116.33, "lat": 39.79}, {"storeName": "影石Insta360哈尔滨金安国际授权体验店", "province": "黑龙江省", "city": "哈尔滨市", "district": "道里区", "address": "黑龙江省哈尔滨市道里区中央大街69号金安国际购物广场2层205", "phone": "18045123576", "hours": "9:30-21:30", "status": "休息中", "lng": 126.63, "lat": 45.78}, {"storeName": "影石Insta360佛山禅城NOVA岭南站授权体验店", "province": "广东省", "city": "佛山市", "district": "禅城区", "address": "佛山市禅城区祖庙路29号首层2号007A号", "phone": "19927796939", "hours": "10:00-22:00", "status": "休息中", "lng": 113.12, "lat": 23.03}, {"storeName": "影石Insta360珠海华发商都授权体验店", "province": "广东省", "city": "珠海市", "district": "香洲区", "address": "广东省珠海市香洲区珠海大道8号华发商都2号楼1层GD-ZD-008,GD-ZD-009号位", "phone": "18565590135", "hours": "10:00-22:00", "status": "休息中", "lng": 113.52, "lat": 22.23}, {"storeName": "影石Insta360成都天府大悦城授权体验店", "province": "四川省", "city": "成都市", "district": "双流区", "address": "四川省成都市天府新区天府大悦城L1-A-43", "phone": "19508155920", "hours": "10:00-22:00", "status": "休息中", "lng": 104.1, "lat": 30.44}, {"storeName": "影石Insta360北京通州万象汇授权体验店", "province": "北京市", "city": "市辖区", "district": "通州区", "address": "北京市通州区运河东大街51号（首开通州万象汇）1层101-L115-2影石Insta360", "phone": "15330049360", "hours": "10:00-22:00", "status": "休息中", "lng": 116.74, "lat": 39.91}, {"storeName": "影石Insta360哈尔滨红博授权体验店", "province": "黑龙江省", "city": "哈尔滨市", "district": "南岗区", "address": "黑龙江省哈尔滨市南岗区红旗大街301号红博会展购物广场B1层金座05厅", "phone": "17614660181", "hours": "周一至周日 9:30-21:00", "status": "营业中", "lng": 126.705483, "lat": 45.761766}, {"storeName": "影石Insta360沈阳长白万象汇授权体验店", "province": "辽宁省", "city": "沈阳市", "district": "和平区", "address": "辽宁省沈阳市和平区长白北路199号长白万象汇L143", "phone": "19802440508", "hours": "10:00-21:30", "status": "休息中", "lng": 123.41, "lat": 41.75}, {"storeName": "影石Insta360上海龙湖闵行天街授权体验店", "province": "上海市", "city": "市辖区", "district": "闵行区", "address": "上海市闵行区剑川路1000弄龙湖天街A-1F-9号商铺", "phone": "17701762879", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 121.422019, "lat": 31.032209}, {"storeName": "影石Insta360上海七宝领展授权体验店", "province": "上海市", "city": "市辖区", "district": "闵行区", "address": "上海市闵行区漕宝路3366号L412B", "phone": "15656341993", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 121.356673, "lat": 31.160653}, {"storeName": "影石Insta360赣州万象城授权体验店", "province": "江西省", "city": "赣州市", "district": "章贡区", "address": "江西省赣州市章贡区章江新区新赣州大道8号 L162影石Insta360", "phone": "17770143234", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 114.933486, "lat": 25.820216}, {"storeName": "影石Insta360广州正佳广场授权体验店", "province": "广东省", "city": "广州市", "district": "天河区", "address": "广州市天河区天河路228号正佳广场3C079-80店铺", "phone": "19068956218", "hours": "周日至周四 10:00-22:00; 周五至周六 10:00-22:30", "status": "营业中", "lng": 113.333819, "lat": 23.138127}, {"storeName": "影石Insta360昆明南亚风情第壹城授权体验店", "province": "云南省", "city": "昆明市", "district": "西山区", "address": "云南省昆明市西山区滇池路南亚风情第一城A2-F1-D19号商铺", "phone": "17787268884", "hours": "10:00-22:00", "status": "休息中", "lng": 102.69, "lat": 25.02}, {"storeName": "影石Insta360保定北国先天下授权体验店", "province": "河北省", "city": "保定市", "district": "新市区", "address": "河北省保定市竞秀区朝阳北大街799号北国先天下一层L133影石（左侧邻星巴克）", "phone": "16630291411", "hours": "周一至周日 10:00-21:00", "status": "营业中", "lng": 115.47573, "lat": 38.895591}, {"storeName": "影石Insta360昆明万象城授权体验店", "province": "云南省", "city": "昆明市", "district": "官渡区", "address": "云南省昆明市官渡区万象城购物中心负一层B1-06号商铺影石专卖店", "phone": "19987831559", "hours": "10:00-22:00", "status": "休息中", "lng": 102.74, "lat": 25.04}, {"storeName": "影石Insta360深圳大运天地授权体验店一店", "province": "广东省", "city": "深圳市", "district": "龙岗区", "address": "深圳市龙岗区龙城街道黄阁坑社区大运天地购物中心连桥广场左边桥盒子", "phone": "13416406570", "hours": "周五-周六10:00-22:30；周日-周四10:00-22:00", "status": "休息中", "lng": 114.23, "lat": 22.7}, {"storeName": "影石Insta360北京王府井银泰IN88授权体验店", "province": "北京市", "city": "市辖区", "district": "东城区", "address": "北京市东城区王府井大街88号L1006-1号影石", "phone": "13141184544", "hours": "10:00-22:00", "status": "休息中", "lng": 116.42, "lat": 39.92}, {"storeName": "影石Insta360上海嘉里合集授权专卖店", "province": "上海市", "city": "市辖区", "district": "静安区", "address": "上海市静安区天目西路218号嘉里合集裙房一楼L1014-2  ", "phone": "13651817504", "hours": "10:00-22:00", "status": "休息中", "lng": 121.46, "lat": 31.25}, {"storeName": "影石Insta360秦皇岛茂业天地授权体验店", "province": "河北省", "city": "秦皇岛市", "district": "海港区", "address": "秦皇岛市海港区河北大街368号F01003X 茂业天地一楼影石", "phone": "15031280281", "hours": "周一至周日 10:00-21:30", "status": "营业中", "lng": 119.55177, "lat": 39.915762}, {"storeName": "影石Insta360济南恒隆授权体验店", "province": "山东省", "city": "济南市", "district": "历下区", "address": "山东省济南市历下区恒隆广场320b影石Insta360店", "phone": "19963890300", "hours": "10:00-22:00", "status": "休息中", "lng": 117.03, "lat": 36.67}, {"storeName": "影石Insta360乌鲁木齐高新万达广场授权体验店", "province": "新疆维吾尔自治区", "city": "乌鲁木齐市", "district": "沙依巴克区", "address": "新疆维吾尔自治区乌鲁木齐市沙依巴克区西环中路兴乐三巷146号好运山广场A区302", "phone": "13999993436", "hours": "周内10:30-22:00；周末10:30-22:30", "status": "休息中", "lng": 87.56, "lat": 43.84}, {"storeName": "影石Insta360太原天美新天地授权体验店", "province": "山西省", "city": "太原市", "district": "小店区", "address": "山西省太原市长风街113号天美新天地5层5F-510影石Insta360", "phone": "18636751619", "hours": "10:00-22:00", "status": "休息中", "lng": 112.57, "lat": 37.83}, {"storeName": "影石Insta360邯郸万象汇授权体验店", "province": "河北省", "city": "邯郸市", "district": "丛台区", "address": "河北省邯郸市丛台区经济开发区廉颇北大街277号华润万象汇一楼L145", "phone": "15512778611", "hours": "10:00-22:00", "status": "休息中", "lng": 114.58, "lat": 36.63}, {"storeName": "影石Insta360嘉兴八佰伴授权体验店", "province": "浙江省", "city": "嘉兴市", "district": "南湖区", "address": "浙江省嘉兴市南湖区中山路1360号嘉兴八佰伴6019F1037A号铺位影石 Insta360", "phone": "15347032367", "hours": "周一至周日 10:00-21:30", "status": "营业中", "lng": 120.738508, "lat": 30.764535}, {"storeName": "影石Insta360深圳宝安大仟里授权体验店", "province": "广东省", "city": "深圳市", "district": "宝安区", "address": "广东省深圳市宝安区西乡街道麻布社区海城路3号前城滨海花园2栋宝安大仟里一层L139", "phone": "15803891116", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 113.879385, "lat": 22.576499}, {"storeName": "影石Insta360郑州金融岛授权体验店", "province": "河南省", "city": "郑州市", "district": "金水区", "address": "河南省郑州市金水区北龙湖金融岛4区1层1016室影石", "phone": "", "hours": "10:00-22:00", "status": "休息中", "lng": 113.74, "lat": 34.82}, {"storeName": "影石Insta360无锡荟聚授权体验店", "province": "江苏省", "city": "无锡市", "district": "锡山区", "address": "江苏省无锡市锡山区团结中路3号无锡荟聚中心2F 02H16", "phone": "", "hours": "10:00-22:00", "status": "休息中", "lng": 120.4, "lat": 31.59}, {"storeName": "影石Insta360重庆龙湖江岸天街授权体验店", "province": "重庆市", "city": "市辖区", "district": "南岸区", "address": "重庆市江南大道15号江岸天街1F-044 ", "phone": "18875150363", "hours": "10:00-22:00", "status": "休息中", "lng": 106.58, "lat": 29.53}, {"storeName": "影石Insta360青岛万象城授权体验店", "province": "山东省", "city": "青岛市", "district": "市南区", "address": "山东省青岛市市南区山东路6号青岛万象城5楼1期L551影石店", "phone": "18262825465", "hours": "10:00-22:00", "status": "休息中", "lng": 120.38, "lat": 36.07}, {"storeName": "影石Insta360潍坊泰华城新天地授权体验店", "province": "山东省", "city": "潍坊市", "district": "奎文区", "address": "山东省潍坊市奎文区泰华新天地1楼影石店", "phone": "16616576066", "hours": "10：00-21:30", "status": "休息中", "lng": 119.12, "lat": 36.72}, {"storeName": "影石Insta360深圳龙华天虹授权体验店", "province": "广东省", "city": "深圳市", "district": "龙华区", "address": "广东省深圳市龙华区民治街道大岭社区中航天逸花园A区L1 层 L102 铺", "phone": "18570265225", "hours": "10：00-22：00", "status": "休息中", "lng": 114.03, "lat": 22.63}, {"storeName": "影石Insta360北京五棵松万达授权体验店", "province": "北京市", "city": "市辖区", "district": "海淀区", "address": "北京市海淀区复兴路69号五棵松万达广场1F1037影石Insta360", "phone": "15512633029", "hours": "10:00-22:00", "status": "休息中", "lng": 116.29, "lat": 39.92}, {"storeName": "影石Insta360临沂万象汇授权体验店", "province": "山东省", "city": "临沂市", "district": "兰山区", "address": "山东省临沂市兰山区沂蒙路159号临沂万象汇L139影石店", "phone": "17661606958", "hours": "10:00-22:00", "status": "休息中", "lng": 118.35, "lat": 35.06}, {"storeName": "影石Insta360汕头万象城授权体验店", "province": "广东省", "city": "汕头市", "district": "龙湖区", "address": "广东省汕头市龙湖区长平路95号汕头万象城L147b", "phone": "0754-87222236", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 116.72, "lat": 23.37}, {"storeName": "影石Insta360青岛永旺梦乐城授权体验店", "province": "山东省", "city": "青岛市", "district": "黄岛区", "address": "山东省青岛市西海岸新区漓江西路1669号永旺梦乐城116影石", "phone": "19106393292", "hours": "9:30-22:00", "status": "休息中", "lng": 120.17, "lat": 35.94}, {"storeName": "影石Insta360深圳华发冰雪世界授权体验店", "province": "广东省", "city": "深圳市", "district": "宝安区", "address": "深圳市宝安区沙井街道沙井南环路华发冰雪世界", "phone": "13310859167", "hours": "10：00-22：00", "status": "休息中", "lng": 113.78, "lat": 22.72}, {"storeName": "影石Insta360佛山欢乐海岸PLUS授权体验店", "province": "广东省", "city": "佛山市", "district": "顺德区", "address": "广东省佛山市顺德区大良街道逢沙村欢乐大道3号欢乐海岸广场13栋101之一、201之一号铺", "phone": "15655426687", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 113.31, "lat": 22.82}, {"storeName": "影石Insta360武汉银泰创意城授权体验店", "province": "湖北省", "city": "武汉市", "district": "洪山区", "address": "湖北省武汉市洪山区珞喻路35号银泰创意城1楼影石", "phone": "13872027560", "hours": "周日-周四：10:00-21:30；周五-周六：10:00-22:00", "status": "休息中", "lng": 114.36, "lat": 30.53}, {"storeName": "影石Insta360广州万民星光城授权体验店", "province": "广东省", "city": "广州市", "district": "海珠区", "address": "广州市海珠区琶洲大道180号万民星光城1F16铺 影石Insta360门店", "phone": "18922410785", "hours": "10:00-22:00", "status": "休息中", "lng": 113.36, "lat": 23.11}, {"storeName": "影石Insta360上海TPY中心授权体验店", "province": "上海市", "city": "市辖区", "district": "徐汇区", "address": "上海市肇嘉浜路1117号的TPY中心二楼L2-03号商铺-影石", "phone": "13621874753", "hours": "10：00-22：00", "status": "休息中", "lng": 121.45, "lat": 31.2}, {"storeName": "影石Insta360武汉荟聚授权体验店", "province": "湖北省", "city": "武汉市", "district": "硚口区", "address": "湖北省武汉市硚口区长宜路1号的武汉荟聚中心L11层02D24号", "phone": "18171123185", "hours": "10:00-22:00", "status": "休息中", "lng": 114.17, "lat": 30.62}, {"storeName": "影石Insta360深圳罗湖金光华授权体验店", "province": "广东省", "city": "深圳市", "district": "罗湖区", "address": "广东省深圳市罗湖区人民南路2028号罗湖金光华购物中心B1-002影石", "phone": "18129825852", "hours": "10:00-22:00", "status": "休息中", "lng": 114.13, "lat": 22.55}, {"storeName": "影石Insta360深圳海雅缤纷城授权体验店", "province": "广东省", "city": "深圳市", "district": "宝安区", "address": "深圳市宝安区宝城5区宝民路海雅缤纷城B1楼B144号", "phone": "19320538852", "hours": "10:00-22:00", "status": "休息中", "lng": 113.91, "lat": 22.57}, {"storeName": "影石Insta360临汾升龙国际授权体验店", "province": "山西省", "city": "临汾市", "district": "尧都区", "address": "山西省临汾市尧都区生龙国际一期一层影石", "phone": "13383575556", "hours": "10:00-22:00", "status": "休息中", "lng": 111.53, "lat": 36.09}, {"storeName": "影石Insta360北京龙湖丽泽天街授权体验店", "province": "北京市", "city": "市辖区", "district": "丰台区", "address": "北京市丰台区丽泽路16号院1号楼龙湖·北京丽泽天街商场[A-1F-C17]号影石Insta360", "phone": "13130802529", "hours": "10:00-22:00", "status": "休息中", "lng": 116.34, "lat": 39.87}, {"storeName": "影石Insta360南京金陵天地授权体验店", "province": "江苏省", "city": "南京市", "district": "建邺区", "address": "南京市建邺区中和路68号金陵天地 L1 层 L156 铺位", "phone": "17768382981", "hours": "10:00-21:00", "status": "休息中", "lng": 118.720638, "lat": 31.981022}, {"storeName": "影石Insta360北京超极合生汇授权体验店", "province": "北京市", "city": "市辖区", "district": "昌平区", "address": "北京市昌平区北清路超极合生汇lg2-72", "phone": "15611127757", "hours": "10:00-22:00", "status": "休息中", "lng": 116.3, "lat": 40.1}, {"storeName": "影石Insta360上海月星环球港授权体验店", "province": "上海市", "city": "市辖区", "district": "普陀区", "address": "上海市普陀区中山北路 3300 号月星环球港 B2101", "phone": "13951876577", "hours": "10:00-22:00", "status": "休息中", "lng": 121.42, "lat": 31.24}, {"storeName": "影石Insta360扬州万象汇授权体验店", "province": "江苏省", "city": "扬州市", "district": "邗江区", "address": "江苏省扬州市邗江区文昌中路 606 号 扬州万象汇L0139N", "phone": "19975077153", "hours": "10:00-22:00", "status": "休息中", "lng": 119.43, "lat": 32.4}, {"storeName": "影石Insta360兰州万象城授权体验店", "province": "甘肃省", "city": "兰州市", "district": "城关区", "address": "兰州市城关区庆阳路2号兰州万象城L5层L519号影石专卖店", "phone": "15682872568", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 103.851468, "lat": 36.060267}, {"storeName": "影石Insta360西安DT51授权体验店", "province": "陕西省", "city": "西安市", "district": "雁塔区", "address": "陕西省西安市高新区唐延路69号陕西国际体育之窗DT51商场3楼Insta360专柜", "phone": "17352684277", "hours": "10:00-22:00", "status": "休息中", "lng": 108.9, "lat": 34.21}, {"storeName": "影石Insta360杭州亚奥万象天地授权体验店", "province": "浙江省", "city": "杭州市", "district": "萧山区", "address": "浙江省杭州市萧山区盈丰街道亚奥城杭州亚奥万象天地L111 商铺", "phone": "17328896877", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 120.253833, "lat": 30.262157}, {"storeName": "影石Insta360苏州中心授权体验店", "province": "江苏省", "city": "苏州市", "district": "苏州工业园区", "address": "江苏省苏州市工业园区苏州中心商场北区B1层(A）B1-54", "phone": "18068055829", "hours": "10:00-22:00", "status": "休息中", "lng": 120.68, "lat": 31.32}, {"storeName": "影石Insta360商丘正弘汇授权体验店", "province": "河南省", "city": "商丘市", "district": "梁园区", "address": "河南省商丘市梁园区前进街道神火大道正弘汇一楼L155号", "phone": "19059705213", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 115.664098, "lat": 34.443416}, {"storeName": "影石Insta360成都龙泉世茂广场授权体验店", "province": "四川省", "city": "成都市", "district": "龙泉驿区", "address": "四川省成都市龙泉驿区大面街道金枫路833号15栋1层152号L1-52店铺", "phone": "17828411306", "hours": "10:00-22:00", "status": "休息中", "lng": 104.2, "lat": 30.59}, {"storeName": "影石Insta360洛阳大卫天地授权体验店", "province": "河南省", "city": "洛阳市", "district": "西工区", "address": "河南省洛阳市西工区中州中路丹尼斯大卫天地8F029号 影石Insta360", "phone": "17739093233", "hours": "周一至周日 9:30-22:00", "status": "营业中", "lng": 112.442334, "lat": 34.675004}, {"storeName": "影石Insta360苏州昆山万象汇授权体验店", "province": "江苏省", "city": "苏州市", "district": "昆山市", "address": "江苏省昆山市玉山镇万象路 昆山万象汇外街 S175a （窖滚旁边）", "phone": "18051880656", "hours": "周一至周日 10:00-21:30", "status": "营业中", "lng": 120.933257, "lat": 31.387336}, {"storeName": "影石Insta360上海黄埔日月光中心授权体验店", "province": "上海市", "city": "市辖区", "district": "黄浦区", "address": "上海市黄浦区日月光中心1F-RJ10-11室", "phone": "13381956644", "hours": "10:00-22:00", "status": "休息中", "lng": 121.48, "lat": 31.21}, {"storeName": "影石Insta360昆明五华吾悦授权体验店", "province": "云南省", "city": "昆明市", "district": "五华区", "address": "云南省昆明市五华区新城吾悦广场一楼1012-1", "phone": "18083895715", "hours": "10：00-22：00", "status": "休息中", "lng": 102.66, "lat": 25.1}, {"storeName": "影石Insta360山东菏泽佳和城授权体验店", "province": "山东省", "city": "菏泽市", "district": "牡丹区", "address": "山东省菏泽市牡丹区中华路与牡丹路交汇处佳和城购物中心F1-117", "phone": "18364070108", "hours": "10：00-22：00", "status": "休息中", "lng": 115.47, "lat": 35.24}, {"storeName": "影石Insta360上海陆家嘴中心授权体验店", "province": "上海市", "city": "市辖区", "district": "浦东新区", "address": "上海市浦东新区浦东南路899号陆家嘴中心 L+Mall商场LG1层", "phone": "17274637838", "hours": "10:00-22:00", "status": "休息中", "lng": 121.52238, "lat": 31.236387}, {"storeName": "影石Insta360 无锡万象城授权体验店", "province": "江苏省", "city": "无锡市", "district": "滨湖区", "address": "江苏省无锡市滨湖区金石路88号万象城一楼L1 73-74", "phone": "18115365881", "hours": "周一至周日 9:30-21:30", "status": "营业中", "lng": 120.289348, "lat": 31.520031}, {"storeName": "影石Insta360常州万象城授权体验店", "province": "江苏省", "city": "常州市", "district": "天宁区", "address": "江苏省常州市天宁区离宫路 329 号华润国际花园 100 幢 常州万象城 1号门外街 L114a", "phone": "15312563235", "hours": "周一至周日 10:00-21:30", "status": "营业中", "lng": 119.964942, "lat": 31.755996}, {"storeName": "影石Insta360上海合生汇授权体验店", "province": "上海市", "city": "市辖区", "district": "杨浦区", "address": "翔殷路1099号合生国际广场L1-03号商铺影石", "phone": "19521300436", "hours": "10:00-22:00", "status": "休息中", "lng": 121.524713, "lat": 31.305855}, {"storeName": "影石Insta360成都大悦城授权体验店", "province": "四川省", "city": "成都市", "district": "武侯区", "address": "大悦城购物中心1F-D11号", "phone": "18284470815", "hours": "10:00-22:00", "status": "休息中", "lng": 104.017691, "lat": 30.632063}, {"storeName": "影石Insta360南京景枫授权体验店", "province": "江苏省", "city": "南京市", "district": "江宁区", "address": "双龙大道1698号景枫中心F125-5", "phone": "18851949294", "hours": "10:00-22:00", "status": "休息中", "lng": 118.82668, "lat": 31.936053}, {"storeName": "影石Insta360昆明顺城授权体验店", "province": "云南省", "city": "昆明市", "district": "五华区", "address": "东风西路11号顺城购物中心负一层B1-68号", "phone": "13608815805", "hours": "周日～周四10:00-22:00，周五～周六10:00-22:30", "status": "休息中", "lng": 102.713809, "lat": 25.041761}, {"storeName": "影石Insta360上海长宁来福士授权体验店", "province": "上海市", "city": "市辖区", "district": "长宁区", "address": "长宁路 1123 号 上海长宁来福士广场东区E01层 K03号影石Insta360", "phone": "19539481977", "hours": "10:00-22:00", "status": "休息中", "lng": 121.421698, "lat": 31.22232}, {"storeName": "影石Insta360苏州吴江万象汇授权体验店", "province": "江苏省", "city": "苏州市", "district": "吴江区", "address": "松陵街道秋枫街吴江万象汇L176", "phone": "13390837059", "hours": "10:00-22:00", "status": "休息中", "lng": 120.625604, "lat": 31.142355}, {"storeName": "影石Insta360广州番禺天河城授权体验店", "province": "广东省", "city": "广州市", "district": "番禺区", "address": "广东省广州市番禺区汉溪大道东366号番禺天河城A区首层L126铺", "phone": "13360560983", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 113.354421, "lat": 23.009569}, {"storeName": "影石Insta360上海北外滩来福士授权体验店", "province": "上海市", "city": "市辖区", "district": "虹口区", "address": "东大名路999号上海北外滩来福士广场 01层26B号影石Insta360", "phone": "17278813595", "hours": "10:00-22:00", "status": "休息中", "lng": 121.421698, "lat": 31.22232}, {"storeName": "影石Insta360宁波万象城授权体验店", "province": "浙江省", "city": "宁波市", "district": "江北区", "address": "浙江省宁波市江北区清河路265号宁波万象城L224铺位", "phone": "19157602877", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 121.561527, "lat": 29.90489}, {"storeName": "影石Insta360中山石歧万象汇授权体验店", "province": "广东省", "city": "中山市", "district": "石岐街道", "address": "广东省中山市孙文东路28号中山石岐万象汇LG层G128号商铺", "phone": "18144953592", "hours": "周日至周四 10:00-22:00; 周五至周六 10:00-22:30", "status": "营业中", "lng": 113.395398, "lat": 22.52688}, {"storeName": "影石Insta360天津万象城授权体验店", "province": "天津市", "city": "市辖区", "district": "河西区", "address": "天津市河西区越秀路街道万象城B1-024-2", "phone": "13672044033", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 117.219077, "lat": 39.096551}, {"storeName": "影石Insta360广州广州塔广场授权体验店", "province": "广东省", "city": "广州市", "district": "海珠区", "address": "广东省广州市海珠区广州塔路8号广州塔广场负一层B108商铺", "phone": "19926007927", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 113.331388, "lat": 23.110358}, {"storeName": "影石Insta360昆山万象汇授权体验店", "province": "江苏省", "city": "苏州市", "district": "昆山市", "address": "玉山镇万象路昆山万象汇外街S175A", "phone": "18061696251", "hours": "10：00-22：00", "status": "休息中", "lng": 120.93379, "lat": 31.387479}, {"storeName": "影石Insta360成都金牛凯德授权体验店", "province": "四川省", "city": "成都市", "district": "金牛区", "address": "金牛区九里堤街道凯德广场", "phone": "13408447177", "hours": "10:00-22:00", "status": "休息中", "lng": 104.050963, "lat": 30.709695}, {"storeName": "影石Insta360天津南开大悦城授权体验店", "province": "天津市", "city": "市辖区", "district": "南开区", "address": "天津市南开区南门外大街2-6号大悦城南区2F-D41影石", "phone": "13022252612", "hours": "10:00-22:00", "status": "休息中", "lng": 117.186449, "lat": 39.13894}, {"storeName": "影石Insta360杭州IN77授权体验店", "province": "浙江省", "city": "杭州市", "district": "上城区", "address": "浙江省杭州市上城区延安路238号杭州湖滨银泰in77 C1区B1层负一楼184-1影石Insta360", "phone": "18967196182", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 120.171243, "lat": 30.259129}, {"storeName": "影石Insta360石家庄万象城授权体验店", "province": "河北省", "city": "石家庄市", "district": "桥西区", "address": "河北省石家庄市桥西区中山西路108号华润万象城B1 B104A", "phone": "13315127749", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 114.485248, "lat": 38.048399}, {"storeName": "影石Insta360泉州浦西万达授权体验店", "province": "福建省", "city": "泉州市", "district": "丰泽区", "address": "福建省泉州市丰泽区宝洲路679号浦西万达广场1楼1030-AA影石专卖店", "phone": "18060561060", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 118.606158, "lat": 24.887537}, {"storeName": "影石Insta360厦门SM授权体验店", "province": "福建省", "city": "厦门市", "district": "湖里区", "address": "厦门市湖里区嘉禾路468号SM广场一楼中庭KK102影石专柜", "phone": "18050237915", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 118.133531, "lat": 24.506669}, {"storeName": "影石Insta360成都金楠天街授权体验店", "province": "四川省", "city": "成都市", "district": "武侯区", "address": "四川省成都市武侯区晋阳路龙湖金楠天街 1F-26号铺位", "phone": "18349155695", "hours": "10:00-22:00", "status": "休息中", "lng": 104.002724, "lat": 30.654224}, {"storeName": "影石Insta360南京桥北弘阳广场授权体验店", "province": "江苏省", "city": "南京市", "district": "浦口区", "address": "江苏省南京市弘阳广场大桥北路48号B1区-1F-28号", "phone": "18912974413", "hours": "10:00-22:00", "status": "休息中", "lng": 118.732665, "lat": 32.142399}, {"storeName": "影石Insta360天津天河城授权体验店", "province": "天津市", "city": "市辖区", "district": "和平区", "address": "天津市和平区天河城购物中心5FD12", "phone": "13132534132", "hours": "10:00-22:00", "status": "休息中", "lng": 117.210668, "lat": 39.133042}, {"storeName": "影石Insta360厦门大悦城授权体验店", "province": "福建省", "city": "厦门市", "district": "集美区", "address": "福建省厦门市集美区厦门大悦城1F-D01", "phone": "18965510135", "hours": "10:00-22:00", "status": "休息中", "lng": 118.06, "lat": 24.6}, {"storeName": "影石Insta360北京望京凯德授权体验店", "province": "北京市", "city": "市辖区", "district": "朝阳区", "address": "北京市朝阳区望京凯德mall商场1层", "phone": "13011809502", "hours": "10:00-22:00", "status": "休息中", "lng": 116.47, "lat": 40.0}, {"storeName": "影石Insta360成都西宸天街授权体验店", "province": "四川省", "city": "成都市", "district": "金牛区", "address": "金牛区花照壁西顺街399号附115号1层A馆-1F-15号", "phone": "18482332045", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 104.038435, "lat": 30.704573}, {"storeName": "影石Insta360成都温江合生汇授权体验店", "province": "四川省", "city": "成都市", "district": "温江区", "address": "四川省成都市温江区光华大道三段1588号1栋附101号成都合生汇L1层L1-E1-18号", "phone": "17828133776", "hours": "10:00-22:00", "status": "休息中", "lng": 103.87, "lat": 30.69}, {"storeName": "影石Insta360温州滨江万象城授权体验店", "province": "浙江省", "city": "温州市", "district": "鹿城区", "address": "浙江省温州市鹿城区瓯江路3999号温州滨江万象城一楼L165a影石Insta360", "phone": "19106782077", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 120.717583, "lat": 28.023293}, {"storeName": "影石Insta360沈阳铁西万象汇授权体验店", "province": "辽宁省", "city": "沈阳市", "district": "铁西区", "address": "沈阳市铁西区建设东路158号华润置地沈阳铁西万象汇B186", "phone": "15102405592", "hours": "10:00-22:00", "status": "休息中", "lng": 123.38, "lat": 41.8}, {"storeName": "影石Insta360郑州探十里授权体验店", "province": "河南省", "city": "郑州市", "district": "中原区", "address": "河南省郑州市中原区陇海路桐柏路探十里1楼L173z影石Insta360", "phone": "19037131363", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 113.621802, "lat": 34.741431}, {"storeName": "影石Insta360南京仙林金鹰授权体验店", "province": "江苏省", "city": "南京市", "district": "栖霞区", "address": "江苏省南京市栖霞区仙林街道学海路1号仙林金鹰HB01-F1111", "phone": "17372762791", "hours": "10:00-22:00", "status": "休息中", "lng": 118.93, "lat": 32.11}, {"storeName": "影石Insta360郑州正弘城授权体验店", "province": "河南省", "city": "郑州市", "district": "金水区", "address": "河南省郑州市金水区东风路正弘城负1楼花园里LB-M14", "phone": "13598605739", "hours": "10:00-22:00", "status": "休息中", "lng": 113.69, "lat": 34.8}, {"storeName": "影石Insta360福建龙岩万宝授权体验店", "province": "福建省", "city": "龙岩市", "district": "新罗区", "address": "福建省龙岩市新罗区龙岩万宝广场新3号门旁边1001铺", "phone": "18959031282", "hours": "周一至周日 10:00-22:00", "status": "营业中", "lng": 117.027072, "lat": 25.088457}, {"storeName": "影石Insta360徐州苏宁授权体验店", "province": "江苏省", "city": "徐州市", "district": "鼓楼区", "address": "江苏省徐州市鼓楼区淮海东路29号徐州苏宁广场131b", "phone": "17712122284", "hours": "10:00-22:00", "status": "休息中", "lng": 117.2, "lat": 34.27}, {"storeName": "影石Insta360惠州华贸授权体验店", "province": "广东省", "city": "惠州市", "district": "惠城区", "address": "广东省惠州市惠城区华贸天地店铺L1-1142", "phone": "18923645517", "hours": "10:00-22:00", "status": "休息中", "lng": 114.42, "lat": 23.11}, {"storeName": "影石Insta360宁波明州里授权专卖店", "province": "浙江省", "city": "宁波市", "district": "鄞州区", "address": "#N/A", "phone": "18858095418", "hours": "10:00-22:00", "status": "休息中", "lng": 121.55, "lat": 29.83}, {"storeName": "影石Insta360北京798创意园授权专卖店", "province": "北京市", "city": "市辖区", "district": "朝阳区", "address": "酒仙桥路 4号院内751影石体验店（便利蜂旁边）", "phone": "15679620963", "hours": "10:00~20:00", "status": "休息中", "lng": 116.504968, "lat": 39.990565}, {"storeName": "影石Insta360昆明佰腾数码广场照材专卖店", "province": "云南省", "city": "昆明市", "district": "五华区", "address": "云南省昆明市五华区圆通北路121号佰腾数码广场A座一楼B9a影石授权店", "phone": "15287131837", "hours": "9:30-18:00", "status": "休息中", "lng": 102.712633, "lat": 25.063306}, {"storeName": "影石Insta360北京五棵松授权专卖店", "province": "北京市", "city": "市辖区", "district": "海淀区", "address": "北京市海淀区西四环中路6号五棵松摄影器材城一层C24A影石Insta360专卖店", "phone": "15600389557", "hours": "周一至周日 9:30-17:20", "status": "营业中", "lng": 116.283211, "lat": 39.926995}, {"storeName": "影石Insta360杭州百脑汇照材专卖店", "province": "浙江省", "city": "杭州市", "district": "西湖区", "address": "教工路23号百脑汇科技大厦一楼1B12", "phone": "13165999212", "hours": "9:00-18:00", "status": "休息中", "lng": 120.139589, "lat": 30.28183}, {"storeName": "影石Insta360南宁万锦电脑城照材专区", "province": "广西壮族自治区", "city": "南宁市", "district": "青秀区", "address": "广西南宁市青秀区星湖路27号惠工电子科技城1A05铺", "phone": "15977703464", "hours": "10：00-22：00", "status": "休息中", "lng": 108.35, "lat": 22.81}, {"storeName": "影石Insta360深圳新华强照材专卖店", "province": "广东省", "city": "深圳市", "district": "福田区", "address": "广东省深圳市福田区华强北路华强电子世界二店三楼Q3C127-128", "phone": "15627197278", "hours": "9:30-19:10", "status": "休息中", "lng": 114.092656, "lat": 22.54871}, {"storeName": "影石Insta360深圳新华强照材专卖店二店", "province": "广东省", "city": "深圳市", "district": "福田区", "address": "广东省深圳市福田区华强北新华强电子世界2店二楼Q2C099", "phone": "15920046777", "hours": "周一-周四 10：00-19：30； 周五-周天 10：00-20：30", "status": "休息中", "lng": 114.092656, "lat": 22.54871}, {"storeName": "影石Insta360赣州泽丰环球汇授权专区", "province": "江西省", "city": "赣州市", "district": "章贡区", "address": "江西省赣州市章贡区泽丰环球汇2号门门口一楼", "phone": "18379777148", "hours": "10:00-22:00", "status": "休息中", "lng": 114.95, "lat": 25.83}, {"storeName": "影石Insta360重庆国泰广场授权专卖店", "province": "重庆市", "city": "市辖区", "district": "渝中区", "address": "重庆市渝中区邹容路108号国泰广场第 负2层（B2层）钻石中庭C", "phone": "18983617081", "hours": "10:00-22:00", "status": "休息中", "lng": 106.58, "lat": 29.57}, {"storeName": "影石Insta360深圳华强北赛格科技园照材专卖店", "province": "广东省", "city": "深圳市", "district": "福田区", "address": "广东省深圳市福田区华强北街道华强北路3018号", "phone": "19926804416", "hours": "10:00-22:00", "status": "休息中", "lng": 114.092656, "lat": 22.54871}, {"storeName": "影石Insta360保定西大街照材专卖店", "province": "河北省", "city": "保定市", "district": "莲池区", "address": "河北省保定市莲池区永华街道西大街东段轴线21-23号", "phone": "19903321333", "hours": "10:00-21:00", "status": "休息中", "lng": 115.5, "lat": 38.86}, {"storeName": "影石Insta360成都百脑汇照材专卖店", "province": "四川省", "city": "成都市", "district": "武侯区", "address": "四川省成都市武侯区磨子桥百脑汇一楼a16", "phone": "18808217636", "hours": "9：00-18：30", "status": "休息中", "lng": 104.08, "lat": 30.64}, {"storeName": "影石Insta360沈阳百脑汇照材专卖店二店", "province": "辽宁省", "city": "沈阳市", "district": "和平区", "address": "辽宁省沈阳市和平区三好街百脑汇科技大厦1楼1D15A", "phone": "13190032624", "hours": "9：00-17：00", "status": "休息中", "lng": 123.43, "lat": 41.77}, {"storeName": "影石Insta360合肥大蜀山半边街授权专卖店", "province": "安徽省", "city": "合肥市", "district": "合肥高新技术产业开发区", "address": "合肥市高新区大蜀山半边街2#101室", "phone": "19049660158", "hours": "9:00-22:00", "status": "休息中", "lng": 117.19, "lat": 31.86}, {"storeName": "影石Insta360武汉电脑大世界照材专卖店", "province": "湖北省", "city": "武汉市", "district": "洪山区", "address": "湖北省武汉市洪山区珞喻路电脑大世界1楼影石Insta360", "phone": "18571592123", "hours": "9：00-20：00", "status": "休息中", "lng": 114.37, "lat": 30.53}, {"storeName": "影石Insta360杭州EFC广场授权专卖店", "province": "浙江省", "city": "杭州市", "district": "余杭区", "address": "浙江省杭州市余杭区仓前街道EFC欧美广场B区向往街1楼1127-11 号", "phone": "19033977897", "hours": "10:00—22:00", "status": "休息中", "lng": 120.01, "lat": 30.29}, {"storeName": "影石Insta360赤峰商厦照材专卖店", "province": "内蒙古自治区", "city": "赤峰市", "district": "红山区", "address": "内蒙古自治区赤峰市红山区赤峰商厦一楼正门商厅", "phone": "15598553011", "hours": "8：30-17：00", "status": "休息中", "lng": 118.96, "lat": 42.28}, {"storeName": "影石Insta360新疆乌鲁木齐宏景数码广场照材二店", "province": "新疆维吾尔自治区", "city": "乌鲁木齐市", "district": "天山区", "address": "新疆省乌鲁木齐市天山区红旗路宏景数码广场1楼A13A14", "phone": "15276661338", "hours": "10：30-19：30", "status": "休息中", "lng": 87.62, "lat": 43.8}, {"storeName": "影石Insta360合肥新粮仓授权专卖店", "province": "安徽省", "city": "合肥市", "district": "蜀山区", "address": "安徽省合肥市蜀山区望江路388号新粮仓*文化商业合集L11铺影石Insta360", "phone": "18056026416", "hours": "9:00-22:00", "status": "休息中", "lng": 117.23, "lat": 31.84}, {"storeName": "影石Insta360哈尔滨教化电子大世界照材专卖店", "province": "黑龙江省", "city": "哈尔滨市", "district": "南岗区", "address": "黑龙江省哈尔滨市南岗区松花江街139号教化电子大世界2楼268室", "phone": "13766811197", "hours": "9:00-17:00", "status": "休息中", "lng": 126.64, "lat": 45.75}, {"storeName": "影石Insta360深圳老华强照材专卖店", "province": "广东省", "city": "深圳市", "district": "福田区", "address": "广东省深圳市福田区华强北路华强电子世界1号楼1层1号门11C010", "phone": "19584371460", "hours": "9：30-21：30", "status": "休息中", "lng": 114.09, "lat": 22.55}, {"storeName": "影石Insta360西安东新科贸照材专卖店", "province": "陕西省", "city": "西安市", "district": "碑林区", "address": "陕西省西安市碑林区雁塔路中段东新科贸B座一楼1-06A", "phone": "13468567001", "hours": "10:00-22:00", "status": "休息中", "lng": 108.97, "lat": 34.24}, {"storeName": "影石Insta360聊城万达照材专卖店", "province": "山东省", "city": "聊城市", "district": "东昌府区", "address": "山东省聊城市东昌府区新区街道柳园北路 39 号万达广场一楼", "phone": "17663558852", "hours": "10:00-22:00", "status": "休息中", "lng": 115.99, "lat": 36.48}, {"storeName": "影石Insta360杭州EIC广场授权专卖店", "province": "浙江省", "city": "杭州市", "district": "萧山区", "address": "浙江省杭州市萧山区盈丰街道EIC欧美广场T2号楼1层欧镁创新城 2-116 号", "phone": "13777357660", "hours": "10:00-22:00", "status": "休息中", "lng": 120.25, "lat": 30.24}, {"storeName": "影石Insta360新疆石河子万达授权专卖店", "province": "新疆维吾尔自治区", "city": "自治区直辖县级行政区划", "district": "石河子市", "address": "新疆维吾尔自治区石河子市东城街道万达广场一楼三号门附近 影石专卖店", "phone": "13139939899", "hours": "11:00-22:00", "status": "休息中", "lng": 86.07, "lat": 44.29}, {"storeName": "影石Insta360新疆喀什数码街照材店", "province": "新疆维吾尔自治区", "city": "喀什地区", "district": "喀什市", "address": "新疆维吾尔自治区喀什市解放南路5号门面房", "phone": "18160334567", "hours": "10：30—21：30", "status": "休息中", "lng": 76.0, "lat": 39.46}, {"storeName": "影石Insta360大连东关街授权专卖店", "province": "辽宁省", "city": "大连市", "district": "西岗区", "address": "辽宁省大连市西岗区大龙街79号A1-3-2", "phone": "18041188179", "hours": "9：00-21：00", "status": "休息中", "lng": 121.63, "lat": 38.93}, {"storeName": "影石Insta360郴州解放路照材专卖店", "province": "湖南省", "city": "郴州市", "district": "北湖区", "address": "湖南省郴州市北湖区解放路34-5号门面（青少年宫对面）", "phone": "18598806457", "hours": "9：00-21：00", "status": "休息中", "lng": 113.04, "lat": 25.81}, {"storeName": "影石Insta360南京建邺苏宁Max照材专卖店", "province": "江苏省", "city": "南京市", "district": "建邺区", "address": "南京市建邺区江东中路98号万达广场1楼苏宁电器", "phone": "13770841170", "hours": "10：00-21：30", "status": "休息中", "lng": 118.74, "lat": 32.04}, {"storeName": "影石Insta360成都天府苏宁MAX授权专卖店", "province": "四川省", "city": "成都市", "district": "武侯区", "address": "四川省成都市武侯区桂溪街道天府大道北段8号苏宁易购一楼", "phone": "18428046918", "hours": "10:00-21:00", "status": "休息中", "lng": 104.08, "lat": 30.64}, {"storeName": "影石Insta360福州大利嘉城专卖店", "province": "福建省", "city": "福州市", "district": "台江区", "address": "福建省福州市台江区新港街道五一新村前街28号大利嘉城F区一层10号店面", "phone": "18650345926", "hours": "9：30-18：00", "status": "休息中", "lng": 119.32, "lat": 26.07}, {"storeName": "影石Insta360成都西村大院授权专卖店", "province": "四川省", "city": "成都市", "district": "青羊区", "address": "四川省成都市青羊区贝森北路1号附200号 影石专卖店", "phone": "18428384360", "hours": "9：30-22：00", "status": "休息中", "lng": 104.01, "lat": 30.68}, {"storeName": "影石Insta360苏州石街苏宁Max照材专卖店", "province": "江苏省", "city": "苏州市", "district": "姑苏区", "address": "苏州市姑苏区金门路158号苏宁易购1楼", "phone": "13770841170", "hours": "9:30-21:00", "status": "休息中", "lng": 120.61, "lat": 31.32}, {"storeName": "影石Insta360兰州苏宁MAX照材专卖店", "province": "甘肃省", "city": "兰州市", "district": "城关区", "address": "甘肃省兰州市城关区临夏路金达大厦1层苏宁Max一楼中厅影石Insta门店", "phone": "13359410124", "hours": "9.00-20.00", "status": "休息中", "lng": 103.82, "lat": 36.07}, {"storeName": "影石Insta360平顶山丹尼斯照材专卖店", "province": "河南省", "city": "平顶山市", "district": "卫东区", "address": "河南省平顶山市开源路丹尼斯一楼影石Insta360店", "phone": "16691730566", "hours": "9:30-21:30", "status": "休息中", "lng": 113.32, "lat": 33.74}, {"storeName": "影石Insta360鄂尔多斯金峰电子城照材专卖店", "province": "内蒙古自治区", "city": "鄂尔多斯市", "district": "东胜区", "address": "内蒙古鄂尔多斯市东胜区交通街道金峰电子城一楼影石Insta360", "phone": "18004779740", "hours": "8：30—19：00", "status": "休息中", "lng": 109.99, "lat": 39.83}, {"storeName": "影石Insta360呼和浩特诚信数码广场照材专卖店", "province": "内蒙古自治区", "city": "呼和浩特市", "district": "新城区", "address": "内蒙古呼和浩特市新城区中山东路22号一楼4-5号门市", "phone": "18604050981", "hours": "9:30-18:30", "status": "休息中", "lng": 111.68, "lat": 40.83}, {"storeName": "影石Insta360临沂百脑汇照材专卖店", "province": "山东省", "city": "临沂市", "district": "兰山区", "address": "山东省临沂市兰山区兰山街道百脑汇数码科技广场二楼精4号", "phone": "15588008812", "hours": "9：00 -19：00", "status": "休息中", "lng": 118.33, "lat": 35.09}, {"storeName": "影石Insta360新乡大桥悦时代照材专卖店", "province": "河南省", "city": "新乡市", "district": "红旗区", "address": "河南省新乡市红旗区大桥悦时代", "phone": "", "hours": "10:00-22:00", "status": "休息中", "lng": 113.91, "lat": 35.29}, {"storeName": "影石Insta360南京艺影佳照材专卖店", "province": "江苏省", "city": "南京市", "district": "玄武区", "address": "江苏省南京市玄武区珠江路699号B座一楼沿街门店1-2", "phone": "13851847533", "hours": "", "status": "休息中", "lng": 118.8, "lat": 32.06}, {"storeName": "影石Ins360南昌八一大道照材专区", "province": "江西省", "city": "南昌市", "district": "东湖区", "address": "江西省南昌市东湖区八一大道312号 影石专卖店", "phone": "", "hours": "", "status": "休息中", "lng": 115.91, "lat": 28.68}, {"storeName": "影石Insta360合肥罍街照材专卖店", "province": "安徽省", "city": "合肥市", "district": "包河区", "address": "合肥市包河区宁国路与水阳江路交口罍街南区", "phone": "19356079649", "hours": "", "status": "休息中", "lng": 117.3, "lat": 31.82}, {"storeName": "影石Insta360恩施星光里购物中心照材专卖店", "province": "湖北省", "city": "恩施土家族苗族自治州", "district": "恩施市", "address": "湖北省恩施市首府一品8号楼商业2楼（恩施通信广场）", "phone": "18872802222", "hours": "9:00-22:00", "status": "休息中", "lng": 109.47, "lat": 30.29}, {"storeName": "影石Insta360大连中央大道照材专卖店", "province": "辽宁省", "city": "大连市", "district": "沙河口区", "address": "辽宁省大连市沙河口区中央大道地下一层a701-1", "phone": "18624361369", "hours": "9:00-19:00", "status": "休息中", "lng": 121.59, "lat": 38.92}, {"storeName": "影石Insta360温州开太百货照材专卖店", "province": "浙江省", "city": "温州市", "district": "鹿城区", "address": "浙江省温州市鹿城区开太百货一楼A-02", "phone": "15727831779", "hours": "10：00-22：00", "status": "休息中", "lng": 120.67, "lat": 28.02}, {"storeName": "影石Insta360苏州人民商场照材专卖店", "province": "江苏省", "city": "苏州市", "district": "姑苏区", "address": "江苏省苏州市姑苏区北局路22号人民商场家电广场一楼影石专柜", "phone": "18962318209", "hours": "10：00-19：00", "status": "休息中", "lng": 120.63, "lat": 31.32}, {"storeName": "影石Insta360新疆克拉玛依市汇嘉时代广场照材专卖店", "province": "新疆维吾尔自治区", "city": "克拉玛依市", "district": "克拉玛依区", "address": "新疆省克拉玛依市克拉玛依区汇嘉时代广场1楼", "phone": "18609906160", "hours": "11:00-22:00", "status": "休息中", "lng": 84.89, "lat": 45.59}, {"storeName": "影石Insta360上海百脑汇照材专卖店", "province": "上海市", "city": "市辖区", "district": "徐汇区", "address": "漕溪北路339号一楼", "phone": "15168406397", "hours": "10:00-21:00", "status": "休息中", "lng": 121.444653, "lat": 31.19704}, {"storeName": "影石Insta360贵阳中华南路照材专卖店", "province": "贵州省", "city": "贵阳市", "district": "南明区", "address": "贵州省贵阳市南明区中华南路149号中都大厦1层2号门店", "phone": "18085088776", "hours": "10:00-20:00", "status": "休息中", "lng": 106.72, "lat": 26.58}, {"storeName": "影石Insta360大连奥林匹克照材专卖店", "province": "辽宁省", "city": "大连市", "district": "西岗区", "address": "中山路奥电未来城地下二层东2001（地铁口第一家）", "phone": "18940998830", "hours": "9:30-17:30", "status": "休息中", "lng": 121.616263, "lat": 38.914928}, {"storeName": "影石Insta360沈阳百脑汇照材专卖店", "province": "辽宁省", "city": "沈阳市", "district": "和平区", "address": "文萃路百脑汇科技大厦1B05号", "phone": "17702442230", "hours": "9:00-17:00", "status": "休息中", "lng": 123.433621, "lat": 41.770557}, {"storeName": "影石Insta360无锡百脑汇照材专卖店", "province": "江苏省", "city": "无锡市", "district": "梁溪区", "address": "人民西路百脑汇一楼1C12、1C14", "phone": "18020506090", "hours": "9:00-18:00", "status": "休息中", "lng": 120.297223, "lat": 31.580364}, {"storeName": "影石Insta360贵阳新大陆数码广场照材专卖店", "province": "贵州省", "city": "贵阳市", "district": "南明区", "address": "贵州省贵阳市南明区中华南路新大陆电脑城1楼影石专营店", "phone": "19011722242", "hours": "10：00-22：00", "status": "休息中", "lng": 106.718916, "lat": 26.581372}, {"storeName": "影石Insta360哈尔滨船舶电子大世界照材专卖店", "province": "黑龙江省", "city": "哈尔滨市", "district": "南岗区", "address": "哈尔滨市南岗区南通大街船舶电子大世界西区1层166B（三期半圆门进门沿左边墙直走第四间）", "phone": "13104628851", "hours": "8:30-17:30", "status": "休息中", "lng": 126.673163, "lat": 45.78062}, {"storeName": "影石Insta360广州百脑汇照材专卖店", "province": "广东省", "city": "广州市", "district": "天河区", "address": "广东省广州市天河区天河路598号百脑汇1B12(影石insta)", "phone": "13184899989", "hours": "9:30-21:00", "status": "休息中", "lng": 113.2, "lat": 23.8}, {"storeName": "影石Insta360天津百脑汇授权专卖店", "province": "天津市", "city": "市辖区", "district": "南开区", "address": "天津市南开区鞍山西道336号百脑汇商场1A03", "phone": "15633811583", "hours": "9:30-19:00", "status": "休息中", "lng": 117.164491, "lat": 39.121516}, {"storeName": "影石Insta360合肥百脑汇照材专卖店", "province": "安徽省", "city": "合肥市", "district": "包河区", "address": "合肥市包河区金寨路162号百脑汇2楼2A16", "phone": "18018685758", "hours": "09:00-18:00", "status": "休息中", "lng": 117.272217, "lat": 31.845049}, {"storeName": "影石Isnta360上海环龙商场照材专卖店", "province": "上海市", "city": "市辖区", "district": "静安区", "address": "上海市静安区秣陵路202号环龙商场一楼1006-1007商铺", "phone": "15021912968", "hours": "10:00-20:00", "status": "休息中", "lng": 121.462782, "lat": 31.253695}, {"storeName": "影石Insta360青岛百脑汇照材专卖店", "province": "山东省", "city": "青岛市", "district": "市北区", "address": "山东省青岛市市北区辽宁路百脑汇1楼1E08", "phone": "15253257181", "hours": "9:00-18:00", "status": "休息中", "lng": 120.339906, "lat": 36.089846}, {"storeName": "影石Insta360重庆百脑汇照材专卖店", "province": "重庆市", "city": "市辖区", "district": "九龙坡区", "address": "重庆市九龙坡区石桥铺百脑汇电脑城1B03 影石专卖店", "phone": "17745084482", "hours": "9:00-18:30", "status": "休息中", "lng": 106.49, "lat": 29.54}, {"storeName": "影石Insta360重庆观音桥赛博数码广场照材专卖店", "province": "重庆市", "city": "市辖区", "district": "江北区", "address": "重庆市江北区观音桥步行街5号芯赛博1F-1014", "phone": "18723385175", "hours": "10:00-21:00", "status": "休息中", "lng": 106.54, "lat": 29.58}, {"storeName": "影石Insta360成都数码广场照材专卖店A", "province": "四川省", "city": "成都市", "district": "武侯区", "address": "四川省成都市武侯区人民南路四段1号数码广场1楼a8b 13908203715", "phone": "13908203715", "hours": "9:00-18:00", "status": "休息中", "lng": 104.07, "lat": 30.64}, {"storeName": "影石Insta360成都华凌摄影城照材专卖店", "province": "四川省", "city": "成都市", "district": "金牛区", "address": "四川省成都市金牛区文家巷12号华凌婚纱摄影器材城一楼A27", "phone": "19108190448", "hours": "9:00-18:30", "status": "休息中", "lng": 104.05, "lat": 30.69}, {"storeName": "影石Insta360绵阳数码广场照材专卖店", "province": "四川省", "city": "绵阳市", "district": "涪城区", "address": "四川省绵阳市涪城区数码广场1楼B2", "phone": "13778147661", "hours": "9:00-18:30", "status": "休息中", "lng": 104.75, "lat": 31.47}, {"storeName": "影石Insta360新疆宏景数码广场照材专卖店", "province": "新疆维吾尔自治区", "city": "乌鲁木齐市", "district": "天山区", "address": "新疆乌鲁木齐天山区红旗路宏景数码广场C5C6", "phone": "13319881259", "hours": "9:00-21:00", "status": "休息中", "lng": 87.62, "lat": 43.8}, {"storeName": "影石Insta济南华强电子科技照材专卖店", "province": "山东省", "city": "济南市", "district": "历下区", "address": "山东省济南市历下区157号华强电子世界二层Q2015A铺位", "phone": "13210541165", "hours": "9:00-18:00", "status": "休息中", "lng": 117.06, "lat": 36.67}, {"storeName": "影石Insta360昆山商厦家电市场照材专卖店", "province": "江苏省", "city": "苏州市", "district": "昆山市", "address": "江苏省苏州市昆山市玉山镇人民南路96-2A昆山商厦家电生活广场一楼", "phone": "15655136545", "hours": "9：30-21：00", "status": "休息中", "lng": 120.96, "lat": 31.38}, {"storeName": "影石Insta360上海星光摄影城照材专卖店", "province": "上海市", "city": "市辖区", "district": "黄浦区", "address": "鲁班路300号星光摄影器材城A区132室影石Insta 360专卖店", "phone": "13052083193", "hours": "9:00-19:00", "status": "休息中", "lng": 121.48, "lat": 31.21}, {"storeName": "影石Insta360南昌和昌里街区授权专卖店", "province": "江西省", "city": "南昌市", "district": "红谷滩区", "address": "江西省南昌市红谷滩区会展路888号和昌里1层024铺insta影石专卖店（地铁4号口） 黄语欢", "phone": "18679156781", "hours": "10:00-22:00", "status": "休息中", "lng": 115.854758, "lat": 28.69646}, {"storeName": "影石Insta360杭州学院路照材专卖店", "province": "浙江省", "city": "杭州市", "district": "西湖区", "address": "浙江省杭州市西湖区翠苑街道学院路82号", "phone": "19065683089", "hours": "9:00-21:00", "status": "休息中", "lng": 120.14, "lat": 30.28}, {"storeName": "影石Insta360郑州信万广场授权专卖店", "province": "河南省", "city": "郑州市", "district": "金水区", "address": "河南省郑州市金水区国基路丰庆路信万广场一楼A1012", "phone": "15137199413", "hours": "09:30-22:00", "status": "休息中", "lng": 113.65, "lat": 34.83}, {"storeName": "影石Insta360潍坊益家园照材专卖店", "province": "山东省", "city": "潍坊市", "district": "潍城区", "address": "北宫西街3687号6号楼益家园家电家居MALL潍城店", "phone": "18353620560", "hours": "9:30-20:00", "status": "休息中", "lng": 119.08, "lat": 36.74}, {"storeName": "影石Insta360西安百脑汇照材专卖店", "province": "陕西省", "city": "西安市", "district": "碑林区", "address": "碑林区雁塔中路百脑汇电脑城一楼1E08影石Insta360专卖店", "phone": "13669228897", "hours": "9:00-18:30", "status": "休息中", "lng": 108.97, "lat": 34.24}, {"storeName": "影石Insta360长沙科佳电脑城照材专卖店", "province": "湖南省", "city": "长沙市", "district": "芙蓉区", "address": "湖南省长沙市芙蓉区朝阳街道车站中路21号科佳电脑城一楼（火车站对面）", "phone": "15388090416", "hours": "09:00-18:30", "status": "休息中", "lng": 113.02, "lat": 28.2}, {"storeName": "影石Insta360长沙高桥数码广场照材专卖店", "province": "湖南省", "city": "长沙市", "district": "雨花区", "address": "湖南省长沙市雨花区高桥现代商贸城4栋1楼03号东门入口", "phone": "15675881828", "hours": "09:00-18:30", "status": "休息中", "lng": 113.03, "lat": 28.18}, {"storeName": "影石Insta360苏州泰华数码天地照材专卖店", "province": "江苏省", "city": "苏州市", "district": "姑苏区", "address": "江苏省苏州姑苏区人民路372号1b10", "phone": "18014899816", "hours": "09:00-21:00", "status": "休息中", "lng": 120.63, "lat": 31.3}, {"storeName": "影石Insta360石家庄太和电子城照材专卖店", "province": "河北省", "city": "石家庄市", "district": "新华区", "address": "石家庄市新华区太和电子城一层F区40号", "phone": "13582157063", "hours": "9:00~18:00", "status": "休息中", "lng": 114.49, "lat": 38.05}, {"storeName": "影石Insta360东莞悠兰里街区授权专卖店", "province": "广东省", "city": "东莞市", "district": "南城街道", "address": "广东省东莞市松山湖文化艺术街区B3-101铺 吴记春", "phone": "0769-27287666", "hours": "10:00-22:00", "status": "休息中", "lng": 113.89308, "lat": 22.92852}, {"storeName": "影石Insta360重庆石桥铺赛博广场照材专卖店", "province": "重庆市", "city": "市辖区", "district": "九龙坡区", "address": "重庆市九龙坡区渝州路6号石桥铺赛博数码广场1楼1013", "phone": "18723482272", "hours": "9:30-18:30", "status": "休息中", "lng": 106.49, "lat": 29.54}, {"storeName": "影石Insta360南京华海3C照材专卖店", "province": "江苏省", "city": "南京市", "district": "玄武区", "address": "江苏省南京市玄武区珠江路435号华海大厦", "phone": "13382056018", "hours": "10:00-20:00", "status": "休息中", "lng": 118.8, "lat": 32.06}, {"storeName": "影石Insta360西安北部赛格广场照材专卖店", "province": "陕西省", "city": "西安市", "district": "未央区", "address": "陕西省西安市凤城二路赛格电子市场二楼a2060影石Insta360", "phone": "17795830325", "hours": "9.30-18.30", "status": "休息中", "lng": 108.95, "lat": 34.32}, {"storeName": "影石Insta360西安百瑞未来城照材专卖店", "province": "陕西省", "city": "西安市", "district": "碑林区", "address": "陕西省西安市碑林区雁塔路中段58号西安百瑞未来城A区一楼影石Insta360店", "phone": "17302912592", "hours": "9：00-19：00", "status": "休息中", "lng": 108.97, "lat": 34.24}, {"storeName": "影石Insta360成都A世界照材专卖店", "province": "四川省", "city": "成都市", "district": "武侯区", "address": "四川省成都市武侯区一环路南二段17号A世界电脑商城一楼001号", "phone": "18123306865", "hours": "9.30-18.00", "status": "休息中", "lng": 104.07, "lat": 30.64}, {"storeName": "影石Insta360泰安三源照材专卖店", "province": "山东省", "city": "泰安市", "district": "泰山区", "address": "山东省泰安市泰山区财源大街107号三源家电1楼", "phone": "18661314123", "hours": "9:00-19:00", "status": "休息中", "lng": 117.13, "lat": 36.19}, {"storeName": "影石Insta360武汉婚纱摄影照材专卖店", "province": "湖北省", "city": "武汉市", "district": "江岸区", "address": "湖北省武汉市江岸区胜利街6号一楼1011商铺", "phone": "15337204720", "hours": "9:00-18:00", "status": "休息中", "lng": 114.3, "lat": 30.59}, {"storeName": "影石Insta360沈阳东软科技城照材专卖店", "province": "辽宁省", "city": "沈阳市", "district": "和平区", "address": "辽宁省沈阳市和平区三好街东软大厦一层1A007", "phone": "13149802583", "hours": "9:00-17:00", "status": "休息中", "lng": 123.43, "lat": 41.77}, {"storeName": "影石Insta360成都数码广场照材专卖店B", "province": "四川省", "city": "成都市", "district": "武侯区", "address": "四川省成都市武侯区人民南路四段1号数码广场1楼B11", "phone": "18010587558", "hours": "9:00-18:00", "status": "休息中", "lng": 104.07, "lat": 30.64}, {"storeName": "影石Insta360佛山创意产业园授权专卖店", "province": "广东省", "city": "佛山市", "district": "禅城区", "address": "广东省佛山市禅城区创意产业园33号楼122号", "phone": "15304949991", "hours": "13：00-21：00", "status": "休息中", "lng": 113.1, "lat": 23.02}, {"storeName": "影石Insta360长春百脑汇照材专卖店", "province": "吉林省", "city": "长春市", "district": "朝阳区", "address": "吉林省长春市朝阳区工农大路百脑汇科技大厦一楼1A05影石专卖店", "phone": "17767791123", "hours": "09：00-18：00", "status": "休息中", "lng": 125.31, "lat": 43.87}, {"storeName": "影石Insta360大庆百脑汇照材专卖店", "province": "黑龙江省", "city": "大庆市", "district": "萨尔图区", "address": "黑龙江省大庆市萨尔图区东风新村纬七路百脑汇一楼1B10", "phone": "19904861234", "hours": "9:00-17:30", "status": "休息中", "lng": 125.12, "lat": 46.6}, {"storeName": "影石Insta360成都天府艺术公园授权专卖店", "province": "四川省", "city": "成都市", "district": "金牛区", "address": "四川省成都市金牛区北三环路一段111-113号天府艺术公园111号索尼SONY", "phone": "19108018226", "hours": "10:00-22:00", "status": "休息中", "lng": 104.03, "lat": 30.72}, {"storeName": "影石Insta360徐州中山南路格派照材专卖店", "province": "江苏省", "city": "徐州市", "district": "泉山区", "address": "江苏省徐州市中山南路98号佳能专卖店(鸿姐火锅楼下)", "phone": "15252035203", "hours": "10:00-20:00", "status": "休息中", "lng": 117.19, "lat": 34.26}, {"storeName": "影石Insta360郑州赛博数码港照材专卖店", "province": "河南省", "city": "郑州市", "district": "金水区", "address": "河南省郑州市金水区赛博数码港一楼M111", "phone": "15238015211", "hours": "9:00-19:00", "status": "休息中", "lng": 113.67, "lat": 34.81}, {"storeName": "影石Insta360西安鹏博大厦照材专卖店", "province": "陕西省", "city": "西安市", "district": "碑林区", "address": "西安市碑林区雁塔路19号鹏博大厦1层B01", "phone": "15929317811", "hours": "9：30-19：30", "status": "休息中", "lng": 108.97, "lat": 34.24}, {"storeName": "上海闵行凯德梦之龙照材专卖店", "province": "上海市", "city": "市辖区", "district": "闵行区", "address": "上海市闵行区沪闵路6088号凯德闵行商业中心一层48C号影石Insta360专卖店", "phone": "15168406397", "hours": "10：00-22：00", "status": "休息中", "lng": 121.37776, "lat": 31.108154}, {"storeName": "影石insta360河北石家庄织音1953授权专卖店", "province": "河北省", "city": "石家庄市", "district": "长安区", "address": "河北省石家庄市长安区和平东路161号织音1953园区完美人生一层 N-1066", "phone": "13111527531", "hours": "10:00-22:00", "status": "休息中", "lng": 114.52, "lat": 38.06}, {"storeName": "影石Insta360湖南摄影城照材专卖店", "province": "湖南省", "city": "长沙市", "district": "芙蓉区", "address": "湖南省长沙市芙蓉区解放东路湖南摄影城一楼138号影石Insta360照材专卖店", "phone": "15973120697", "hours": "9:00-18:00", "status": "休息中", "lng": 113.02, "lat": 28.2}, {"storeName": "影石Insta360太原阳光数码港照材专区", "province": "山西省", "city": "太原市", "district": "小店区", "address": "山西省太原市小店区南内环街阳光数码港二层A224", "phone": "15536501051", "hours": "冬季早9点到下午6点，夏季早9点到下午7点", "status": "休息中", "lng": 112.57, "lat": 37.84}, {"storeName": "影石Insta360洛阳王城公园照材专卖店", "province": "河南省", "city": "洛阳市", "district": "西工区", "address": "河南省洛阳市西工区中州中路312号17-18 商铺，影石Insta360王城公园店", "phone": "13838888481", "hours": "9：00-19：00", "status": "休息中", "lng": 112.43, "lat": 34.67}, {"storeName": "影石Insta360淄博百脑汇照材专卖店", "province": "山东省", "city": "淄博市", "district": "张店区", "address": "山东省淄博市张店区和平街道百脑汇一楼1C09", "phone": "18553319181", "hours": "09：00-18：00", "status": "休息中", "lng": 118.05, "lat": 36.81}, {"storeName": "影石Insta360唐山硅谷数码广场授权专卖店", "province": "河北省", "city": "唐山市", "district": "路北区", "address": "河北省唐山市路北区建设路硅谷一层蜗牛摄影器材", "phone": "15354157888", "hours": "9:00~18:00", "status": "休息中", "lng": 118.18, "lat": 39.65}, {"storeName": "影石Insta360老华强授权体验店", "province": "广东省", "city": "深圳市", "district": "福田区", "address": "深圳市福田区华强北路华强电子世界深圳一店1号楼3号门11C010、11C011", "phone": "19584371460", "hours": "9:30-21:30", "status": "休息中", "lng": 114.086309, "lat": 22.543183}, {"storeName": "影石Insta360北京马连道照材专区", "province": "北京市", "city": "市辖区", "district": "西城区", "address": "北京市西城区马连道摄影器材城4层南区202", "phone": "18501219182", "hours": "9:30-18:00", "status": "休息中", "lng": 116.33, "lat": 39.89}, {"storeName": "影石Insta360北京中关村鼎好大厦兴海嘉合授权专区", "province": "北京市", "city": "市辖区", "district": "海淀区", "address": "北京市海淀区大街3号鼎好大厦B座地下二层229A", "phone": "", "hours": "", "status": "休息中", "lng": 116.32, "lat": 39.99}, {"storeName": "影石Insta360安达机车授权专区", "province": "四川省", "city": "成都市", "district": "双流区", "address": "四川省成都市双流区万安街道开元村4组222号", "phone": "18708442079", "hours": "9:00-18:00", "status": "休息中", "lng": 104.12, "lat": 30.48}, {"storeName": "影石Insta360乐山久顺数码广场授权专区", "province": "四川省", "city": "乐山市", "district": "市中区", "address": "乐山市市中区嘉定北路99号", "phone": "13890633681", "hours": "9.00-17.30", "status": "休息中", "lng": 103.77, "lat": 29.59}, {"storeName": "影石Insta360郑州智汇城照材专卖店", "province": "河南省", "city": "郑州市", "district": "金水区", "address": "河南省郑州市金水区文博西路与东风路交叉口智汇城内场一楼西北门C1000-1", "phone": "13683817031", "hours": "9:00-18:30", "status": "休息中", "lng": 113.676837, "lat": 34.804373}, {"storeName": "影石Insta360百脑汇凌越照材专区", "province": "河南省", "city": "郑州市", "district": "金水区", "address": "东风路百脑汇一楼1A21/金水区文化路硅谷广场A座1809", "phone": "", "hours": "9:30-17:00", "status": "休息中", "lng": 113.677585, "lat": 34.805183}, {"storeName": "郑州风玩数码影石Insta360照材售点", "province": "河南省", "city": "郑州市", "district": "金水区", "address": "东风路与文博西路交汇处智汇城一楼A1009号", "phone": "", "hours": "9:30-18:00", "status": "休息中", "lng": 113.67852, "lat": 34.804025}, {"storeName": "三亚腾越数码", "province": "海南省", "city": "三亚市", "district": "天涯区", "address": "海南三亚市天涯区新风街237号创业大厦", "phone": "13876335389", "hours": "10:00-19:00", "status": "休息中", "lng": 109.514027, "lat": 18.25774}, {"storeName": "三亚硕展（京东电脑数码）", "province": "海南省", "city": "三亚市", "district": "天涯区", "address": "海南省三亚市天涯区新风街74号", "phone": "13637536901", "hours": "", "status": "休息中", "lng": 109.512888, "lat": 18.256836}, {"storeName": "海南锐度电子科技有限公司（千卓）", "province": "海南省", "city": "三亚市", "district": "天涯区", "address": "三亚市天涯区新风街创新电脑城一楼千卓数码", "phone": "13518863799", "hours": "", "status": "休息中", "lng": 109.511503, "lat": 18.256648}, {"storeName": "南宁光驿摄影", "province": "广西壮族自治区", "city": "南宁市", "district": "青秀区", "address": "广西南宁市青秀区古城路2-8号星湖电影院一层111-6号光驿摄影", "phone": "13377189715", "hours": "9:00-18:00", "status": "休息中", "lng": 108.343158, "lat": 22.812834}, {"storeName": "福州茗航毅站", "province": "福建省", "city": "福州市", "district": "台江区", "address": "福建省福州市台江区白马南路63号", "phone": "18150799246", "hours": "10:00-18:00", "status": "休息中", "lng": 119.307559, "lat": 26.056201}, {"storeName": "合肥儒佳影石授权体验专区", "province": "安徽省", "city": "合肥市", "district": "包河区", "address": "安徽省合肥市包河区中国科学技术大学高科技广场南二区10-12号", "phone": "13645601775", "hours": "", "status": "休息中", "lng": 117.272265, "lat": 31.842064}, {"storeName": "合肥美好数码影视器材", "province": "安徽省", "city": "合肥市", "district": "蜀山区", "address": "安徽省合肥市蜀山区赛博数码广场一楼152号", "phone": "", "hours": "", "status": "休息中", "lng": 117.272827, "lat": 31.847236}, {"storeName": "影石Insta360杭州拱墅区悦街照材售点", "province": "浙江省", "city": "杭州市", "district": "拱墅区", "address": "浙江省杭州市拱墅区大悦城T202（T2商业电梯厅2楼）", "phone": "15001897964", "hours": "10:00-22:00", "status": "休息中", "lng": 120.14, "lat": 30.31}, {"storeName": "影石Insta360石家庄太和电子城新勇数码授权专区", "province": "河北省", "city": "石家庄市", "district": "新华区", "address": "金桥北大街太和电子城一层F区24-25号", "phone": "", "hours": "", "status": "休息中", "lng": 114.49, "lat": 38.05}, {"storeName": "影石Insta360唐山信之恒·思远授权专区", "province": "河北省", "city": "唐山市", "district": "路北区", "address": "河北省唐山市路北区玫瑰庄园北新西道底商17-12号", "phone": "", "hours": "", "status": "休息中", "lng": 118.17, "lat": 39.64}, {"storeName": "广西视界电子科技有限公司", "province": "广西壮族自治区", "city": "南宁市", "district": "青秀区", "address": "广西南宁市青秀区星湖路14号电科广场A259", "phone": "16675540526", "hours": "9:30-18:00", "status": "休息中", "lng": 108.33956, "lat": 22.806222}, {"storeName": "漳州市芗城区鸿运电器商行", "province": "福建省", "city": "漳州市", "district": "芗城区", "address": "福建省漳州市芗城区丹霞路118-1号(极核电动)", "phone": "18105964809", "hours": "9:00-21:00", "status": "休息中", "lng": 117.67225, "lat": 24.5085}, {"storeName": "龙岩启腾建筑智能化工程有限公司", "province": "福建省", "city": "龙岩市", "district": "新罗区", "address": "福建龙岩市新罗区闽西交易城C3-4-18", "phone": "15505977100", "hours": "8:00-18:00", "status": "休息中", "lng": 116.997933, "lat": 25.102408}, {"storeName": "广西京桦贸易有限公司", "province": "广西壮族自治区", "city": "南宁市", "district": "西乡塘区", "address": "广西壮族自治区南宁市西乡塘区大学西路10号瑞士花园银湖苑14栋14SP01-2号商铺京东手机数码", "phone": "13528745780", "hours": "10:00-22:00", "status": "休息中", "lng": 108.269065, "lat": 22.838364}, {"storeName": "安徽智影无界数码科技有限公司高新区分公司", "province": "安徽省", "city": "合肥市", "district": "合肥高新技术产业开发区", "address": "安徽省合肥市高新区天乐社区服务中心长江西路与与兰大道交口西南角半边街2#101号商铺", "phone": "19049660158", "hours": "9:00-22:00", "status": "休息中", "lng": 117.202968, "lat": 31.854445}, {"storeName": "安徽智影无界数码科技有限公司新粮仓分公司", "province": "安徽省", "city": "合肥市", "district": "蜀山区", "address": "安徽省合肥市蜀山区井岗镇望江西路388号新粮仓文化商业合集L11号点位", "phone": "18056026416", "hours": "9:00-22:00", "status": "休息中", "lng": 117.220135, "lat": 31.83662}, {"storeName": "南昌新势力科技有限公司", "province": "江西省", "city": "南昌市", "district": "西湖区", "address": "江西省南昌市西湖区八一大道135号长运商贸城A11号", "phone": "13807082776", "hours": "9:00-18:00", "status": "休息中", "lng": 115.905294, "lat": 28.667658}, {"storeName": "甘肃佳禾创智金东电脑城店", "province": "甘肃省", "city": "兰州市", "district": "城关区", "address": "甘肃省兰州市城关区嘉峪关街道东岗东路2309号金东电脑城1楼16号", "phone": "18189551286", "hours": "10:00-18:00", "status": "休息中", "lng": 103.88, "lat": 36.05}, {"storeName": "安阳飞越数码摄影器材店", "province": "河南省", "city": "安阳市", "district": "北关区", "address": "红旗路金豪数码广场二楼B221", "phone": "", "hours": "9:30-17:00", "status": "休息中", "lng": 114.360707, "lat": 36.115587}, {"storeName": "保定市莲池区东金庄乡未来石万达广场售点（vivo专卖店）", "province": "河北省", "city": "保定市", "district": "莲池区", "address": "河北省保定市莲池区东金庄乡未来石万达广场1F 1008  （vivo专卖店）", "phone": "13833003563", "hours": "10:00-22:00", "status": "休息中", "lng": 115.56, "lat": 38.89}, {"storeName": "河北省保定市竞秀区保定万博广场售点（vivo专卖店）", "province": "河北省", "city": "保定市", "district": "竞秀区", "address": "河北省保定市竞秀区东风路街道（保定万博广场）南门1F  (vivo专卖店", "phone": "13292997811", "hours": "10:00-22：00", "status": "休息中", "lng": 115.48, "lat": 38.88}, {"storeName": "大连拓金店", "province": "辽宁省", "city": "大连市", "district": "西岗区", "address": "大同街156号", "phone": "", "hours": "9:00-17:00", "status": "休息中", "lng": 121.616504, "lat": 38.915087}, {"storeName": "北京北苑上品店", "province": "北京市", "city": "市辖区", "district": "朝阳区", "address": "北苑路甲13号上品+互联网城市奥莱一层（UP+）", "phone": "", "hours": "", "status": "休息中", "lng": 116.423171, "lat": 40.037985}, {"storeName": "北京国贸店", "province": "北京市", "city": "市辖区", "district": "朝阳区", "address": "建国门外大街一号中国国际贸易中心国贸商城三期3B209/210（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 116.465988, "lat": 39.916676}, {"storeName": "北京颐堤港店", "province": "北京市", "city": "市辖区", "district": "朝阳区", "address": "酒仙桥颐堤港商场（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 116.498004, "lat": 39.975869}, {"storeName": "布吉万象汇店", "province": "广东省", "city": "深圳市", "district": "龙岗区", "address": "布吉街道翔鸽路2号华润万象汇4层L452（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 114.137937, "lat": 22.59918}, {"storeName": "东门店", "province": "广东省", "city": "深圳市", "district": "罗湖区", "address": "深南东路2102号振华大厦1-2楼（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 114.129435, "lat": 22.550509}, {"storeName": "观澜湖店", "province": "广东省", "city": "深圳市", "district": "龙华区", "address": "观澜街道高尔夫大道8号观澜新城MHMALL（一期）1栋L2层L215216（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 114.083247, "lat": 22.728677}, {"storeName": "广州太古", "province": "广东省", "city": "广州市", "district": "天河区", "address": "天河路与天河东路交界处太古汇商场M层M12商铺（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 113.338335, "lat": 23.140343}, {"storeName": "海岸城店", "province": "广东省", "city": "深圳市", "district": "南山区", "address": "文心五路33号海岸城购物中心负一层042号铺（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 113.942489, "lat": 22.522692}, {"storeName": "海雅缤纷城店", "province": "广东省", "city": "深圳市", "district": "宝安区", "address": "建安一路99号海雅缤纷城518铺（香缤家乐福对面）（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 113.912419, "lat": 22.566182}, {"storeName": "花园城店", "province": "广东省", "city": "深圳市", "district": "南山区", "address": "蛇口南海大道花园城中心南区1-2楼（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 113.929694, "lat": 22.507209}, {"storeName": "华强店", "province": "广东省", "city": "深圳市", "district": "福田区", "address": "华强北路上步工业区103栋（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 114.090414, "lat": 22.553409}, {"storeName": "龙岗万科店", "province": "广东省", "city": "深圳市", "district": "龙岗区", "address": "龙翔大道与德政路交界处万科广场3F-42号（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 114.249058, "lat": 22.719822}, {"storeName": "龙华壹方城店", "province": "广东省", "city": "深圳市", "district": "龙华区", "address": "龙华街道景龙社区龙华大道3639号环智中心C座壹方天地C区L4-027（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 114.037758, "lat": 22.652512}, {"storeName": "欧洲城店", "province": "广东省", "city": "深圳市", "district": "南山区", "address": "北环大道与沙河东路交界处欧洲城迪卡侬二楼（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 120.899697, "lat": 31.974437}, {"storeName": "深圳万象前海购物中心2店", "province": "广东省", "city": "深圳市", "district": "南山区", "address": "听海大道与桂湾四路交汇处L2(万象前海购物中心)（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 113.90636, "lat": 22.537331}, {"storeName": "顺电（上海嘉里城店）", "province": "上海市", "city": "市辖区", "district": "浦东新区", "address": "花木路1378号地下一层B101（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 121.570416, "lat": 31.218812}, {"storeName": "上海浦东南路店", "province": "上海市", "city": "市辖区", "district": "浦东新区", "address": "浦东南路899号陆家嘴中心LG·19-20店铺（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 121.507829, "lat": 31.1883}, {"storeName": "上海尚嘉店", "province": "上海市", "city": "市辖区", "district": "长宁区", "address": "仙霞路99号尚嘉中心地下一层L116-117单元（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 121.413677, "lat": 31.211732}, {"storeName": "上海长宁店", "province": "上海市", "city": "市辖区", "district": "静安区", "address": "大宁路与共和新路交汇处L12(大宁久光)（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 121.458756, "lat": 31.280328}, {"storeName": "时代广场店", "province": "江苏省", "city": "苏州市", "district": "苏州工业园区", "address": "旺敦路圆融时代广场7栋（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 120.717856, "lat": 31.325951}, {"storeName": "苏州东吴天街分店", "province": "江苏省", "city": "苏州市", "district": "吴中区", "address": "东吴南路179号龙湖东吴天街A-2F-06（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 120.635457, "lat": 31.260391}, {"storeName": "苏州龙湖狮山分店", "province": "江苏省", "city": "苏州市", "district": "虎丘区", "address": "塔园路181号龙湖狮山天街四期B178（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 120.561992, "lat": 31.299513}, {"storeName": "苏州欧尚店", "province": "江苏省", "city": "苏州市", "district": "苏州工业园区", "address": "中心大道西181号1栋1033号（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 120.679584, "lat": 31.31223}, {"storeName": "笋岗万象店", "province": "广东省", "city": "深圳市", "district": "罗湖区", "address": "梅园路南侧、桃园路北侧深圳笋岗万象汇L317,L318号铺（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 114.113908, "lat": 22.566642}, {"storeName": "太阳百货店", "province": "广东省", "city": "深圳市", "district": "罗湖区", "address": "解放路2001号利联太阳广场一期二楼（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 114.124997, "lat": 22.5517}, {"storeName": "万象城店", "province": "广东省", "city": "深圳市", "district": "罗湖区", "address": "宝安南路华润万象城5楼（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 114.117203, "lat": 22.545504}, {"storeName": "深圳壹方城2店", "province": "广东省", "city": "深圳市", "district": "宝安区", "address": "新湖路99号壹方城L3-033-D-E（顺电）", "phone": "", "hours": "", "status": "休息中", "lng": 113.894099, "lat": 22.558656}, {"storeName": "影石insta360（云纺店）", "province": "云南省", "city": "昆明市", "district": "西山区", "address": "云南省昆明市西山区云纺国际商厦c座5楼101号影石insta360", "phone": "13187831549", "hours": "9.30-18.00", "status": "休息中", "lng": 102.72, "lat": 25.03}, {"storeName": "影石Insta360昆明小西门店", "province": "云南省", "city": "昆明", "district": "五华区", "address": "云南省昆明市五华区人民中路 173号全球通信一楼影石Insta360专区", "phone": "15912460970", "hours": "9:00-21:00", "status": "休息中", "lng": 102.71, "lat": 25.05}, {"storeName": "昆明摩托装备授权体验店", "province": "云南省", "city": "昆明市", "district": "官渡区", "address": "福保路1号1栋1层凯旋利车博汇安骑天下装备店", "phone": "", "hours": "", "status": "休息中", "lng": 102.725473, "lat": 24.981067}, {"storeName": "雪具授权体验店（长春店）", "province": "吉林省", "city": "长春市", "district": "二道区", "address": "北海路会展中心体育场7看台（冷山雪具）", "phone": "", "hours": "09：00-18：00", "status": "休息中", "lng": 125.404383, "lat": 43.844917}, {"storeName": "北京国贸SOLOX店", "province": "北京市", "city": "市辖区", "district": "朝阳区", "address": "建国门外大街1号商场地上一层3L102、3L103、3L104号双层铺位SOLOX（SNOW51）", "phone": "", "hours": "", "status": "休息中", "lng": 116.466224, "lat": 39.918265}, {"storeName": "上海外滩BFC店", "province": "上海市", "city": "市辖区", "district": "黄浦区", "address": "中山东二路588号2层S212单元（SNOW51室内滑雪场）", "phone": "", "hours": "", "status": "休息中", "lng": 121.504795, "lat": 31.23119}, {"storeName": "盛贤摄影器材城店", "province": "广东省", "city": "广州市", "district": "越秀区", "address": "大沙头二马路盛贤摄影器材城C3-11档", "phone": "18924061992", "hours": "10：00-18：30", "status": "休息中", "lng": 113.29044, "lat": 23.123142}, {"storeName": "宏景数码店（sony）", "province": "新疆维吾尔自治区", "city": "乌鲁木齐市", "district": "天山区", "address": "红旗路宏景数码广场sony专店", "phone": "", "hours": "", "status": "休息中", "lng": 87.623274, "lat": 43.797903}, {"storeName": "宏景数码店（A18）", "province": "新疆维吾尔自治区", "city": "乌鲁木齐市", "district": "天山区", "address": "红旗路宏景数码广场A18", "phone": "", "hours": "", "status": "休息中", "lng": 87.623274, "lat": 43.797903}, {"storeName": "百花村国际信息大店", "province": "新疆维吾尔自治区", "city": "乌鲁木齐市", "district": "天山区", "address": "中山路百花村国际信息大厦14楼", "phone": "", "hours": "", "status": "休息中", "lng": 87.622647, "lat": 43.799808}, {"storeName": "美美购物中心店", "province": "新疆维吾尔自治区", "city": "乌鲁木齐市", "district": "沙依巴克区", "address": "友好北路MM2美美购物中心四楼403铺", "phone": "", "hours": "", "status": "休息中", "lng": 87.597418, "lat": 43.826582}, {"storeName": "克孜都维路赛特电脑城店", "province": "新疆维吾尔自治区", "city": "喀什地区", "district": "喀什市", "address": "新疆喀什市克孜都维路赛特电脑城一楼112号", "phone": "", "hours": "", "status": "休息中", "lng": 75.984293, "lat": 39.471813}, {"storeName": "电脑城道通店", "province": "新疆维吾尔自治区", "city": "伊犁哈萨克自治州", "district": "伊宁市", "address": "新疆伊宁市迎宾路铜锣湾电脑城一楼1-08号", "phone": "", "hours": "", "status": "休息中", "lng": 81.333616, "lat": 43.924255}, {"storeName": "伊犁摄影图片社", "province": "新疆维吾尔自治区", "city": "伊犁哈萨克自治州", "district": "伊宁市", "address": "新疆伊宁市斯大林路60号伊犁摄影图片社", "phone": "", "hours": "", "status": "休息中", "lng": 81.329934, "lat": 43.922552}, {"storeName": "百得电脑店", "province": "新疆维吾尔自治区", "city": "昌吉回族自治州", "district": "奇台县", "address": "新疆奇台县华东古城新街8-1-5奇台百得电脑", "phone": "", "hours": "", "status": "休息中", "lng": 89.595388, "lat": 44.014266}, {"storeName": "甘肃百恩商贸有限公司", "province": "甘肃省", "city": "兰州市", "district": "城关区", "address": "东岗东路2704号万商国际临街1楼108A", "phone": "", "hours": "", "status": "休息中", "lng": 103.879308, "lat": 36.053014}, {"storeName": "德汇万达广场店", "province": "新疆维吾尔自治区", "city": "乌鲁木齐市", "district": "沙依巴克区", "address": "奇台路720号德汇万达广场E栋一楼1035（尚派）", "phone": "", "hours": "", "status": "休息中", "lng": 87.592056, "lat": 43.795238}, {"storeName": "汇嘉时代广场店", "province": "新疆维吾尔自治区", "city": "乌鲁木齐市", "district": "新市区", "address": "新疆乌鲁木齐市北京中路147号汇嘉时代广场一层（尚派）", "phone": "", "hours": "", "status": "休息中", "lng": 87.563337, "lat": 43.882018}, {"storeName": "万达广场一层1030号店", "province": "青海省", "city": "西宁市", "district": "城西区", "address": "广场路1号万达广场一层1030号铺（尚派）", "phone": "", "hours": "", "status": "休息中", "lng": 101.722966, "lat": 36.648626}, {"storeName": "银川大阅城店", "province": "宁夏回族自治区", "city": "银川市", "district": "金凤区", "address": "正源北街大阅城一层116号（尚派）", "phone": "", "hours": "", "status": "休息中", "lng": 106.262096, "lat": 38.519488}, {"storeName": "北京燕莎亮马桥店", "province": "北京市", "city": "市辖区", "district": "朝阳区", "address": "亮马桥路52号燕莎友谊商城5层（鹰巢数码）", "phone": "", "hours": "", "status": "休息中", "lng": 116.469751, "lat": 39.954562}, {"storeName": "北京燕莎金源店", "province": "北京市", "city": "市辖区", "district": "海淀区", "address": "远大路1号金源燕莎友谊商城B1层（鹰巢数码）", "phone": "", "hours": "", "status": "休息中", "lng": 116.297826, "lat": 39.965015}, {"storeName": "北京复兴门百盛店", "province": "北京市", "city": "市辖区", "district": "西城区", "address": "复兴门内大街101号百盛购物中心南楼3层（鹰巢数码）", "phone": "", "hours": "", "status": "休息中", "lng": 116.364773, "lat": 39.91422}, {"storeName": "北京翠微牡丹园店", "province": "北京市", "city": "市辖区", "district": "海淀区", "address": "花园路2号翠微百货牡丹园店三层鹰巢数码", "phone": "", "hours": "", "status": "休息中", "lng": 116.373697, "lat": 39.983318}, {"storeName": "北京翠微公主坟店", "province": "北京市", "city": "市辖区", "district": "海淀区", "address": "复兴路33号公主坟翠微百货A座四层鹰巢数码", "phone": "", "hours": "", "status": "休息中", "lng": 116.309228, "lat": 39.914267}, {"storeName": "北京龙德广场店", "province": "北京市", "city": "市辖区", "district": "昌平区", "address": "立汤路186号翠微龙德广场3层（鹰巢数码）", "phone": "", "hours": "", "status": "休息中", "lng": 116.422025, "lat": 40.065969}, {"storeName": "北京甘家口店", "province": "北京市", "city": "市辖区", "district": "海淀区", "address": "三里河路17号甘家口大厦一层鹰巢数码", "phone": "", "hours": "", "status": "休息中", "lng": 116.339848, "lat": 39.933037}, {"storeName": "北京四通桥当代店", "province": "北京市", "city": "市辖区", "district": "海淀区", "address": "中关村大街40号1层（鹰巢数码）", "phone": "", "hours": "", "status": "休息中", "lng": 116.327636, "lat": 39.976328}, {"storeName": "金厂镇雪场店", "province": "吉林省", "city": "通化市", "district": "东昌区", "address": "金厂镇万峰滑雪场3栋一层103商铺", "phone": "", "hours": "09：00-18：00", "status": "休息中", "lng": 125.970669, "lat": 41.658242}, {"storeName": "可可托海镇雪具店", "province": "新疆维吾尔自治区", "city": "阿勒泰地区", "district": "富蕴县", "address": "可可托海镇文化西路76-1号（兄弟滑雪雪具店）", "phone": "", "hours": "", "status": "休息中", "lng": 89.821864, "lat": 47.226697}, {"storeName": "Targn太耕集物电子产品集合店", "province": "宁夏回族自治区", "city": "银川市", "district": "金凤区", "address": "银川市金凤区正源北街277号建发阅彩城五层539号商铺（海底捞斜对面）", "phone": "", "hours": "", "status": "休息中", "lng": 106.262096, "lat": 38.519488}, {"storeName": "宜昌凯能数码科技照材店", "province": "湖北省", "city": "宜昌市", "district": "西陵区", "address": "珍珠路53号", "phone": "", "hours": "9:30~17:30", "status": "休息中", "lng": 111.293454, "lat": 30.712345}, {"storeName": "昆明华臻铂金店佳汇馆", "province": "云南省", "city": "昆明市", "district": "五华区", "address": "圆通北路121号佰腾数码广场一楼临街", "phone": "", "hours": "", "status": "休息中", "lng": 102.71264, "lat": 25.063351}, {"storeName": "武汉咔拍佳汇馆", "province": "湖北省", "city": "武汉市", "district": "江岸区", "address": "汉口胜利街6号武汉婚纱照材城一楼A区1009号", "phone": "", "hours": "9:30~17:30", "status": "休息中", "lng": 114.300178, "lat": 30.58605}, {"storeName": "杭州启邦授权店", "province": "浙江省", "city": "杭州市", "district": "余杭区", "address": "良渚街道网周路99号3幢5层506室", "phone": "", "hours": "", "status": "休息中", "lng": 120.066363, "lat": 30.369411}, {"storeName": "风影数码东部店", "province": "浙江省", "city": "杭州市", "district": "上城区", "address": "秋涛北路128号东部数码城一楼沿街商铺1A02风影数码", "phone": "", "hours": "", "status": "休息中", "lng": 120.20734, "lat": 30.274306}, {"storeName": "大润发M会员店", "province": "江苏省", "city": "扬州市", "district": "邗江区", "address": "江阳中路425号", "phone": "", "hours": "", "status": "休息中", "lng": 119.40252, "lat": 32.39697}, {"storeName": "开市客宁波店", "province": "浙江省", "city": "宁波市", "district": "鄞州区", "address": "下应街道首南东路与启明南路交叉口东南角", "phone": "", "hours": "", "status": "休息中", "lng": 121.60889, "lat": 29.80378}, {"storeName": "衡水怡然城店", "province": "河北省", "city": "衡水市", "district": "桃城区", "address": "河北省衡水市桃城区大庆东路369号怡然城北区一层1F-009商铺", "phone": "", "hours": "", "status": "休息中", "lng": 115.70665, "lat": 37.75502}, {"storeName": "上海星光阳华摄影器材行", "province": "上海市", "city": "市辖区", "district": "黄浦区", "address": "鲁班路300号A区319", "phone": "", "hours": "", "status": "休息中", "lng": 121.481095, "lat": 31.209148}, {"storeName": "襄阳现代城万鑫数码照材店", "province": "湖北省", "city": "襄阳市", "district": "樊城区", "address": "春园路现代城三楼万鑫数码", "phone": "", "hours": "9:30~17:30", "status": "休息中", "lng": 112.143747, "lat": 32.058367}, {"storeName": "影石小店区授权体验点", "province": "山西省", "city": "太原市", "district": "小店区", "address": "南内环街阳光数码港二层A223-224", "phone": "", "hours": "9:00-17:30", "status": "休息中", "lng": 112.570135, "lat": 37.844818}, {"storeName": "华洋数码影石体验点", "province": "山西省", "city": "朔州市", "district": "朔城区", "address": "南城街道鄯阳街华洋数码相机", "phone": "", "hours": "9:00-17:30", "status": "休息中", "lng": 112.437623, "lat": 39.324797}, {"storeName": "大同菲林照材店", "province": "山西省", "city": "大同市", "district": "平城区", "address": "东信上悦城菲林数码", "phone": "", "hours": "9:00-17:30", "status": "休息中", "lng": 113.304699, "lat": 40.059638}, {"storeName": "太原尼佳照材店", "province": "山西省", "city": "太原市", "district": "小店区", "address": "南内环街130号青龙电脑城一层一期014号（西北门口）", "phone": "", "hours": "9:00-17:30", "status": "休息中", "lng": 112.563962, "lat": 37.844829}, {"storeName": "济南悦扬照材店", "province": "山东省", "city": "济南市", "district": "历下区", "address": "解放路43号赛博数码广场1楼A07号索尼专卖店", "phone": "", "hours": "9:00-18:00", "status": "休息中", "lng": 117.063491, "lat": 36.672719}, {"storeName": "济南青山摄影照材店", "province": "山东省", "city": "济南市", "district": "天桥区", "address": "标山南路12号", "phone": "", "hours": "9:00-18:00", "status": "休息中", "lng": 117.005185, "lat": 36.700632}, {"storeName": "青岛信鹏轩照材店", "province": "山东省", "city": "青岛市", "district": "市北区", "address": "辽宁路147号1c05", "phone": "", "hours": "9:00-18:00", "status": "休息中", "lng": 120.34015, "lat": 36.089738}, {"storeName": "济南亘富沓来商贸照材店", "province": "山东省", "city": "济南市", "district": "历下区", "address": "山大路157号华强电子世界2楼Q2082", "phone": "", "hours": "9:00-18:00", "status": "休息中", "lng": 117.061844, "lat": 36.673104}, {"storeName": "清江浦区航摄数码经营部", "province": "江苏省", "city": "淮安市", "district": "清江浦区", "address": "淮安市清浦区淮海北路苏宁生活广场104号", "phone": "", "hours": "", "status": "休息中", "lng": 119.025785, "lat": 33.597083}, {"storeName": "上海新尚数码售点", "province": "上海市", "city": "市辖区", "district": "黄浦区", "address": "淮海东路99号新尚数码1楼A6", "phone": "", "hours": "", "status": "休息中", "lng": 121.487633, "lat": 31.231194}, {"storeName": "南京艺风授权体验点", "province": "江苏省", "city": "南京市", "district": "玄武区", "address": "珠江路333号百脑汇1楼1C10", "phone": "", "hours": "", "status": "休息中", "lng": 118.799933, "lat": 32.055633}, {"storeName": "镇江仲佳数码体验店", "province": "江苏省", "city": "镇江市", "district": "京口区", "address": "解放路72号小仲数码俱乐部", "phone": "", "hours": "", "status": "休息中", "lng": 119.461822, "lat": 32.207263}, {"storeName": "创新未来智能科技Insta360授权店", "province": "安徽省", "city": "阜阳市", "district": "颍泉区", "address": "颖河西路东方数码广场2楼D2005佳能", "phone": "", "hours": "", "status": "休息中", "lng": 115.828994, "lat": 32.904763}, {"storeName": "深圳领汇金摄影器材", "province": "广东省", "city": "深圳市", "district": "福田区", "address": "华强电子世界二店三楼h3b020-023", "phone": "18925275026", "hours": "10：00-19：30", "status": "休息中", "lng": 114.092656, "lat": 22.54871}, {"storeName": "广州市越秀区忠忠摄影器材行", "province": "广东省", "city": "广州市", "district": "越秀区", "address": "大沙头路西菜地15号", "phone": "18122751607", "hours": "11：00-19：00", "status": "休息中", "lng": 113.290963, "lat": 23.122673}, {"storeName": "M会员店", "province": "江苏省", "city": "常州市", "district": "天宁区", "address": "江苏省常州市天宁区兰陵北路301号", "phone": "", "hours": "", "status": "休息中", "lng": 119.952016, "lat": 31.755399}, {"storeName": "M会员店（南京）", "province": "江苏省", "city": "南京市", "district": "建邺区", "address": "江苏省南京市建邺区南苑街道应天大街866号", "phone": "", "hours": "", "status": "休息中", "lng": 118.750254, "lat": 32.02727}, {"storeName": "毅光年影像路桥数码城店", "province": "浙江省", "city": "台州市", "district": "路桥区", "address": "电子数码城3楼3509号（E7柱子）", "phone": "", "hours": "", "status": "休息中", "lng": 121.37607, "lat": 28.596406}, {"storeName": "毅光年影像椒江店", "province": "浙江省", "city": "台州市", "district": "椒江区", "address": "广场南路573号（海湾浪琴西）", "phone": "", "hours": "", "status": "休息中", "lng": 121.423021, "lat": 28.650245}, {"storeName": "新疆汇天润佳能店", "province": "新疆维吾尔自治区", "city": "乌鲁木齐市", "district": "天山区", "address": "红旗路宏景数码广场A-13 A-14", "phone": "", "hours": "", "status": "休息中", "lng": 87.623182, "lat": 43.797896}, {"storeName": "影石Insta360长沙国储照材店", "province": "湖南省", "city": "长沙市", "district": "芙蓉区", "address": "朝阳街道车站中路国储电脑城一楼二号", "phone": "", "hours": "09:00-18:30", "status": "休息中", "lng": 113.016743, "lat": 28.197267}, {"storeName": "乐山恒达数码", "province": "四川省", "city": "乐山市", "district": "市中区", "address": "嘉定北路99号 久顺广场1FA13", "phone": "", "hours": "", "status": "休息中", "lng": 103.772232, "lat": 29.587718}, {"storeName": "京东之家(南昌王府井店)", "province": "江西省", "city": "南昌市", "district": "青云谱区", "address": "洪城路158号王府井购物中心二楼023", "phone": "13407913078", "hours": "", "status": "休息中", "lng": 115.910811, "lat": 28.659398}, {"storeName": "昆明云纺国际商厦店", "province": "云南省", "city": "昆明市", "district": "西山区", "address": "云纺国际商厦C座5楼101号", "phone": "18908807140", "hours": "", "status": "休息中", "lng": 102.716389, "lat": 25.027287}, {"storeName": "合肥万象城Brompton Loop", "province": "安徽省", "city": "合肥市", "district": "蜀山区", "address": "荷叶地街道潜山路111号万象城1楼Loop 自行车店L140a号", "phone": "19315289052", "hours": "", "status": "休息中", "lng": 117.237586, "lat": 31.805396}, {"storeName": "日照新索照材店", "province": "山东省", "city": "日照市", "district": "东港区", "address": "北京路王府大街C1-1-3号", "phone": "", "hours": "9:00-18:00", "status": "休息中", "lng": 119.528546, "lat": 35.417611}, {"storeName": "武汉季佳PAI影石Insta360售点", "province": "湖北省", "city": "武汉市", "district": "洪山区", "address": "珞喻路1号季佳PAI商场一层1010号（2号/8号地铁街道口C口出右转即到）", "phone": "", "hours": "", "status": "休息中", "lng": 114.360537, "lat": 30.533533}, {"storeName": "潍坊羽中照材店", "province": "山东省", "city": "潍坊市", "district": "潍城区", "address": "南关街道青年路威尼斯2F62", "phone": "15336363466", "hours": "9:00-18:00", "status": "休息中", "lng": 119.117351, "lat": 36.711568}, {"storeName": "济南晶彩数码科技照材店", "province": "山东省", "city": "济南市", "district": "历下区", "address": "山大路178号银座数码广场一层C-15", "phone": "18653186550", "hours": "9:00-18:00", "status": "休息中", "lng": 117.062972, "lat": 36.672918}, {"storeName": "兰山区天鸿摄影器材商行", "province": "山东省", "city": "临沂市", "district": "兰山区", "address": "通达路百脑汇数码广场一楼135号", "phone": "13954919001", "hours": "9:00-18:00", "status": "休息中", "lng": 118.333133, "lat": 35.086374}, {"storeName": "杭州橘子数码", "province": "浙江省", "city": "杭州市", "district": "西湖区", "address": "浙江省杭州市西湖区黄姑山路29号颐高广场A座3楼3029", "phone": "", "hours": "", "status": "休息中", "lng": 120.139094, "lat": 30.28168}, {"storeName": "长沙恒佳摄影器材有限公司", "province": "湖南省", "city": "长沙市", "district": "芙蓉区", "address": "湖南省长沙市芙蓉区解放东路46号湖南摄影城一楼135-136号", "phone": "", "hours": "09:00-18:30", "status": "休息中", "lng": 113.02, "lat": 28.2}, {"storeName": "长沙群创照相器材有限公司", "province": "湖南省", "city": "长沙市", "district": "芙蓉区", "address": "湖南省长沙市芙蓉区湖南省长沙市芙蓉区赛格摄影城 1A12B", "phone": "", "hours": "09:00-18:30", "status": "休息中", "lng": 113.02, "lat": 28.2}, {"storeName": "武汉若羽臣科技照材店", "province": "湖北省", "city": "武汉市", "district": "洪山区", "address": "湖北省武汉市洪山区武汉市洪山区珞狮路352号附30京东电脑数码南湖澳新学院店", "phone": "", "hours": "9:30~17:30", "status": "休息中", "lng": 114.34, "lat": 30.49}, {"storeName": "武汉市盈科照材店", "province": "湖北省", "city": "武汉市", "district": "江岸区", "address": "湖北省武汉市江岸区武汉市江岸区南京路18号盈科摄影器材专卖店", "phone": "", "hours": "9:30~17:30", "status": "休息中", "lng": 114.3, "lat": 30.59}, {"storeName": "青州市友乐影视器材有限公司", "province": "山东省", "city": "潍坊市", "district": "青州市", "address": "山东省青州市尧王山东路399号国泰科技城友乐数码", "phone": "", "hours": "9:00-18:00", "status": "休息中", "lng": 118.49, "lat": 36.7}, {"storeName": "OPPO官方授权服务体验中心(广州越秀区中华广场店)", "province": "广东省", "city": "广州市", "district": "越秀区", "address": "广东省广州市越秀区东山街道中山三路33号中华广场4楼4026/4027铺", "phone": "020-83738896", "hours": "10:00~22:00", "status": "休息中", "lng": 113.281976, "lat": 23.125566}, {"storeName": "OPPO官方授权体验店(广州白云区金铂广场龙归店)", "province": "广东省", "city": "广州市", "district": "白云区", "address": "东省广州市白云区太和镇龙归龙岗路一号金铂广场一楼150A铺", "phone": "19128902259", "hours": "10:00~22:00", "status": "休息中", "lng": 113.2941, "lat": 23.267468}, {"storeName": "OPPO官方授权体验店(广州天河区时尚天河店)", "province": "广东省", "city": "广州市", "district": "天河区", "address": "广东省广州市天河区天河南街道天河路299号体育中心负一层东二街006B商铺", "phone": "18924327252", "hours": "10:00:00~22:00:00", "status": "休息中", "lng": 113.325274, "lat": 23.134059}, {"storeName": "OPPO官方授权体验店(广州白云区嘉禾金铂天地店)", "province": "广东省", "city": "广州市", "district": "白云区", "address": "广东省广州市白云区嘉禾街道金铂广场鹤龙二路85号金铂广场一楼131号铺", "phone": "18688894292", "hours": "10:00:00~22:00:00", "status": "休息中", "lng": 113.282014, "lat": 23.239528}, {"storeName": "OPPO｜一加 旗舰店(广州正佳店)", "province": "广东省", "city": "广州市", "district": "天河区", "address": "广东省广州市天河区天河南街道 天河路228号正佳广场1A003/020、1A002、1A021-22", "phone": "020-88138500", "hours": "10:00:00~22:00:00", "status": "休息中", "lng": 113.327453, "lat": 23.133211}, {"storeName": "OPPO|一加 旗舰店（贵阳万象城店）", "province": "贵州省", "city": "贵阳市", "district": "南明区", "address": "贵州省贵阳市南明区遵义路街道万象城LG126+L119铺", "phone": "0851-85202024", "hours": "周日-周四：10:00-22:00  周五-周六：10:00-22:30", "status": "休息中", "lng": 106.704624, "lat": 26.560248}, {"storeName": "OPPO｜一加 旗舰店(武汉楚河汉街店)", "province": "湖北省", "city": "武汉市", "district": "武昌区", "address": "湖北省武汉市武昌区水果湖街街道商业广场室内步行街J4-2-3号OPPO旗舰店", "phone": "027-87718188", "hours": "10:00:00~22:00:00", "status": "休息中", "lng": 114.337521, "lat": 30.558375}, {"storeName": "广州润宇数码", "province": "广东省", "city": "广州市", "district": "天河区", "address": "广州市天河区天河路502号天河电脑城一楼Z160-161铺", "phone": "13600076277", "hours": "9：00-22：00", "status": "休息中", "lng": 113.327453, "lat": 23.133211}, {"storeName": "邯郸日月城燕赵数码售点1", "province": "河北省", "city": "邯郸市", "district": "丛台区", "address": "陵西大街阳光三联电器日月城一楼", "phone": "", "hours": "", "status": "休息中", "lng": 114.49, "lat": 36.61}, {"storeName": "北京马连道卡达摄影器材售点1", "province": "北京市", "city": "市辖区", "district": "西城区", "address": "北京市西城区马连道11号马连道摄影器材城4层南区212号", "phone": "", "hours": "", "status": "休息中", "lng": 116.33, "lat": 39.89}, {"storeName": "北京百子湾卡达摄影器材售点1", "province": "北京市", "city": "市辖区", "district": "朝阳区", "address": "北京市朝阳区广渠路11号院 能+中心底商A座103", "phone": "", "hours": "", "status": "休息中", "lng": 116.51, "lat": 39.9}, {"storeName": "石家庄蓝墨里京东之家售点1", "province": "河北省", "city": "石家庄市", "district": "桥西区", "address": "河北省石家庄市桥西区蓝墨里购物中心1楼京东之家", "phone": "", "hours": "", "status": "休息中", "lng": 114.5, "lat": 38.03}, {"storeName": "保定颐高广场友联铭扬数码售点1", "province": "河北省", "city": "保定市", "district": "莲池区", "address": "河北省保定市莲池区裕华路颐高数码广场2028号", "phone": "", "hours": "", "status": "休息中", "lng": 115.29, "lat": 38.51}, {"storeName": "石家庄太和电子城珲安电子售点1", "province": "河北省", "city": "石家庄市", "district": "新华区", "address": "金桥北大街6号太和电子城一层F区40号", "phone": "", "hours": "", "status": "休息中", "lng": 114.49, "lat": 38.05}, {"storeName": "石家庄保利广场京东之家售点1", "province": "河北省", "city": "石家庄市", "district": "长安区", "address": "体育北大街191号保利广场一层1009A", "phone": "", "hours": "", "status": "休息中", "lng": 114.54, "lat": 38.08}, {"storeName": "北京五棵松博华同达售点1", "province": "北京市", "city": "市辖区", "district": "海淀区", "address": "北京五棵松国际摄影器材城一层C26", "phone": "", "hours": "", "status": "休息中", "lng": 116.28, "lat": 39.93}, {"storeName": "北京五棵松摄影城华聿资通售点1", "province": "北京市", "city": "市辖区", "district": "海淀区", "address": "北京市海淀区五棵松摄影城B20", "phone": "", "hours": "", "status": "休息中", "lng": 116.28, "lat": 39.93}, {"storeName": "衡水市紫金广场航拍视界售点1", "province": "河北省", "city": "衡水市", "district": "桃城区", "address": "桃城区紫金广场1195号门店", "phone": "", "hours": "", "status": "休息中", "lng": 115.67, "lat": 37.75}, {"storeName": "石家庄海龙电子城佳尼特电子售点1", "province": "河北省", "city": "石家庄市", "district": "长安区", "address": "石家庄市长安区广安大街6号海龙电子城1楼A2-3", "phone": "", "hours": "", "status": "休息中", "lng": 114.53, "lat": 38.05}, {"storeName": "邢台中华科技大厦彭朋电子售点1", "province": "河北省", "city": "邢台市", "district": "信都区", "address": "河北省邢台市信都区中华科技大厦一层112号", "phone": "", "hours": "", "status": "休息中", "lng": 114.49, "lat": 37.08}, {"storeName": "保定银杏路西路塑叁工业园区今日吉瑞相机售点1", "province": "河北省", "city": "保定市", "district": "竞秀区", "address": "保定市竞秀区银杏路西路塑叁工业园区66号", "phone": "", "hours": "", "status": "休息中", "lng": 115.47, "lat": 38.9}, {"storeName": "北京光华路SOHO大厦九州摄影器材售点1", "province": "北京市", "city": "市辖区", "district": "朝阳区", "address": "北京市朝阳区光华路22号光华路SOHO大厦一期二层 212", "phone": "", "hours": "", "status": "休息中", "lng": 116.46, "lat": 39.92}, {"storeName": "天津金元宝爱来无忧售点1", "province": "天津市", "city": "市辖区", "district": "滨海新区", "address": "天津市滨海新区开发区黄海路19号爱来无忧4楼", "phone": "", "hours": "", "status": "休息中", "lng": 117.69, "lat": 39.04}, {"storeName": "石家庄中冶盛世广场疆域蓝图售点1", "province": "河北省", "city": "石家庄市", "district": "裕华区", "address": "河北省石家庄市裕华区裕兴街道中冶盛世广场A座东南角", "phone": "", "hours": "", "status": "休息中", "lng": 114.55, "lat": 38.01}, {"storeName": "广东韶关风度名城广场影石授权售点", "province": "广东省", "city": "韶关市", "district": "浈江区", "address": "广东省韶关市浈江区解放路1号风度名城1层1D006号Apple官方授权店", "phone": "0751-8894688", "hours": "10:00:00~22:00:00", "status": "休息中", "lng": 113.606392, "lat": 24.805278}, {"storeName": "广东湛江霞山万达广场影石授权售点", "province": "广东省", "city": "湛江市", "district": "霞山区", "address": "湛江市霞山区海滨大道128号万达广场一楼1058铺", "phone": "0759-2834568", "hours": "10:00:00~22:00:00", "status": "休息中", "lng": 110.412344, "lat": 21.254971}, {"storeName": "广东肇庆端州星湖国际影石Ista360授权售点", "province": "广东省", "city": "肇庆市", "district": "端州区", "address": "肇庆市端州区端州四路10号星湖国际广场3楼(大润发超市入口旁)-炬旺", "phone": "18807587358", "hours": "10:00:00~22:00:00", "status": "休息中", "lng": 112.478958, "lat": 23.06243}, {"storeName": "荣耀旗舰店(深圳湾万象城店)", "province": "广东省", "city": "深圳市", "district": "福田区", "address": "粤海街道深圳湾万象城二期DL109、DL209号商铺", "phone": "", "hours": "9:00-22:00", "status": "休息中", "lng": 113.93725685993071, "lat": 22.51782195633601}, {"storeName": "荣耀旗舰店(成都宽窄巷子店)", "province": "四川省", "city": "成都市", "district": "青羊区", "address": "宽巷子2号1栋1楼1号", "phone": "", "hours": "9：30-22：00", "status": "休息中", "lng": 104.05281442697688, "lat": 30.66591341276442}, {"storeName": "荣耀直营店(太原钟楼街店)", "province": "山西省", "city": "太原市", "district": "迎泽区", "address": "钟楼街步行街N102/N202号商铺荣耀LIFE店", "phone": "", "hours": "10:00 - 22:30", "status": "休息中", "lng": 112.557492153001, "lat": 37.8673970117145}, {"storeName": "荣耀直营店(昆明万象城店)", "province": "云南省", "city": "昆明市", "district": "官渡区", "address": "东郊路与环城南路交叉口东南80米昆明万象城L201号商铺", "phone": "", "hours": "9：30-22：00", "status": "休息中", "lng": 102.73363671233501, "lat": 25.03269911444718}, {"storeName": "荣耀直营店(南京软件谷店)", "province": "江苏省", "city": "南京市", "district": "雨花台区", "address": "安德门大街55号洁源科技金融城3号楼1层", "phone": "", "hours": "10:00-21:00", "status": "休息中", "lng": 118.75898021714083, "lat": 31.97499037958494}, {"storeName": "荣耀直营店(福州东二环泰禾广场店)", "province": "福建省", "city": "福州市", "district": "晋安区", "address": "东二环泰禾广场(二期)16号楼1层0607铺", "phone": "", "hours": "10:00-22:30", "status": "休息中", "lng": 119.32559704314725, "lat": 26.08721535761431}, {"storeName": "荣耀直营店(深圳机场T3店)", "province": "广东省", "city": "深圳市", "district": "宝安区", "address": "深圳机场T3航站楼3C-05-05、06（安检区内）", "phone": "", "hours": "6:00-22:30", "status": "休息中", "lng": 113.80469404001788, "lat": 22.63302598127929}, {"storeName": "荣耀直营店(广州机场T3店)", "province": "广东省", "city": "广州市", "district": "白云区", "address": "白云机场大道T3航站楼T3B-2R32铺位", "phone": "", "hours": "7:00-22:00", "status": "休息中", "lng": 113.3168825, "lat": 23.3706288}, {"storeName": "武汉摩托坞", "province": "湖北省", "city": "武汉市", "district": "东西湖区", "address": "湖北省武汉市东西湖区长青街道革新大道胜河路 38 号炬辉工业园 11 栋 1 楼摩托坞", "phone": "15623456517", "hours": "9：30-20：00", "status": "休息中", "lng": 114.1, "lat": 30.62}, {"storeName": "蜗牛快跑装备（合肥店）", "province": "安徽省", "city": "合肥市", "district": "双凤开发区", "address": "合肥市淮南路双凤开发区宝湾国际品牌总部5-06蜗牛快跑装备", "phone": "18955426188", "hours": "", "status": "休息中", "lng": 117.3, "lat": 31.95}, {"storeName": "摩友之家", "province": "安徽省", "city": "马鞍山市", "district": "雨山区", "address": "安徽省马鞍山市雨山区九华西路1186号摩友之家", "phone": "13721228688", "hours": "", "status": "休息中", "lng": 118.49, "lat": 31.66}, {"storeName": "林佑丰骑士全兴店", "province": "四川省", "city": "成都市", "district": "金牛区", "address": "四川省成都市金牛区西华大道999号AI数字创智园一期5栋1单元1层101号（林佑丰骑士装备）", "phone": "15928137879", "hours": "", "status": "休息中", "lng": 104.02, "lat": 30.75}, {"storeName": "林佑丰骑士新川店", "province": "四川省", "city": "成都市", "district": "双流区", "address": "四川省成都市双流区新川时代中心A座林佑丰骑士新川店", "phone": "15928137879", "hours": "", "status": "休息中", "lng": 104.09, "lat": 30.51}, {"storeName": "大辉狼骑士装备", "province": "湖南省", "city": "湘潭市", "district": "岳塘区", "address": "湖南省湘潭市岳塘区长株潭大市场摩托车城二期1215栋大辉狼骑士装备售后部", "phone": "13317421885", "hours": "", "status": "休息中", "lng": 113.03, "lat": 27.93}, {"storeName": "怀化市麒麟重机", "province": "湖南省", "city": "怀化市", "district": "鹤城区", "address": "湖南省怀化市鹤城区红星南路，摩托车大市场CFMOTO", "phone": "18807458668", "hours": "", "status": "休息中", "lng": 109.98, "lat": 27.54}, {"storeName": "济南伟业摩托装备旗舰店", "province": "山东省", "city": "济南市", "district": "历城区", "address": "山东省济南市历城区港沟街道详细地址: 凤鸣路5860号6号楼101济南伟业摩托装备旗舰店", "phone": "13287776640", "hours": "", "status": "休息中", "lng": 117.18, "lat": 36.7}, {"storeName": "凯圣机车部品", "province": "浙江省", "city": "绍兴市", "district": "越城区", "address": "浙江省绍兴市越城区中兴大道以西冠友智慧园综合楼0-1-001室", "phone": "13588545506", "hours": "", "status": "休息中", "lng": 120.6, "lat": 30.06}, {"storeName": "八耐机车部品", "province": "浙江省", "city": "嘉兴市", "district": "南湖区", "address": "浙江省嘉兴市南湖区东栅街道富润路262号八耐机车部品", "phone": "15888337557", "hours": "", "status": "休息中", "lng": 120.78, "lat": 30.74}, {"storeName": "山西鸿飞骑士用品", "province": "山西省", "city": "太原市", "district": "迎泽区", "address": "山西省太原市长风东街枣园西路底商 鸿飞骑士用品", "phone": "18636903637", "hours": "", "status": "休息中", "lng": 112.63, "lat": 37.82}, {"storeName": "云南星咖骑士", "province": "云南省", "city": "昆明市", "district": "官渡区", "address": "昆明市 官渡区 阿拉街道 瑞云街 联东U谷昆明经开国际企业港7栋", "phone": "13759583052", "hours": "", "status": "休息中", "lng": 102.88, "lat": 24.99}, {"storeName": "安骑天下", "province": "云南省", "city": "昆明市", "district": "官渡区", "address": "云南省昆明市官渡区福保路1号凯旋利车博汇  安骑天下装备", "phone": "13987145928", "hours": "", "status": "休息中", "lng": 102.73, "lat": 24.98}, {"storeName": "Benelli南京贝纳利旗舰店", "province": "江苏省", "city": "南京市", "district": "江宁区", "address": "江苏省南京市江宁区开源路168号主厂房一层北侧东（江宁高新园）", "phone": "15662787722", "hours": "", "status": "休息中", "lng": 118.87, "lat": 31.95}, {"storeName": "帆帆机车", "province": "河北省", "city": "保定市", "district": "莲池区", "address": "河北省保定市莲池区和平里街恒祥南大街203号", "phone": "15097754356", "hours": "", "status": "休息中", "lng": 115.5, "lat": 38.87}, {"storeName": "兰州冰盾数码售点", "province": "甘肃省", "city": "兰州市", "district": "城关区", "address": "甘肃省兰州市城关区万商国际数码港1楼1号冰盾数码", "phone": "13919900789", "hours": "9:00-18:30", "status": "休息中", "lng": 103.88, "lat": 36.05}, {"storeName": "e·Fun Super（武汉SKP店）", "province": "湖北省", "city": "武汉市", "district": "武昌区", "address": "汉街武汉SKP-3号门4楼E fun super", "phone": "13007112592", "hours": "", "status": "休息中", "lng": 114.344689, "lat": 30.562715}, {"storeName": "温州青青数码", "province": "浙江省", "city": "温州市", "district": "鹿城区", "address": "温州市鹿城区人民路中民市场a11-12", "phone": "18958785888", "hours": "", "status": "休息中", "lng": 120.671745, "lat": 28.017138}, {"storeName": "烟台菲林电子科技照材店", "province": "山东省", "city": "烟台市", "district": "芝罘区", "address": "芝罘屯路11号联民众诚数码广场C0A1", "phone": "13506454610", "hours": "", "status": "休息中", "lng": 121.380488, "lat": 37.555947}, {"storeName": "盛荣时光印象摄影沙龙", "province": "江苏省", "city": "扬州市", "district": "广陵区", "address": "文昌中路273号", "phone": "19941743801", "hours": "", "status": "休息中", "lng": 119.453529, "lat": 32.400476}, {"storeName": "北京五棵松雅奇昕荟售点1", "province": "北京市", "city": "市辖区", "district": "海淀区", "address": "北京市海淀区五棵松路40号北京摄影器材城1层特2号", "phone": "", "hours": "", "status": "休息中", "lng": 116.28, "lat": 39.93}, {"storeName": "汕头华侨试验区辉云数码商行", "province": "广东省", "city": "汕头市", "district": "龙湖区", "address": "广东省汕头市龙湖区珠池街道韩江路尚海阳光3栋104铺面", "phone": "13902771975", "hours": "10:00-21:30", "status": "休息中", "lng": 116.745617, "lat": 23.357014}, {"storeName": "南通苏宁影石售点", "province": "江苏省", "city": "南通市", "district": "崇川区", "address": "江苏省南通市崇川区和平桥街道南大街2号苏宁生活广场", "phone": "13770841170", "hours": "", "status": "休息中", "lng": 120.87, "lat": 32.02}, {"storeName": "天津市滨海新区天津滨海万达广场售点1（室内1F层vivo专卖店）", "province": "天津市", "city": "市辖区", "district": "滨海新区", "address": "天津市滨海新区洞庭路4572号天津滨海万达广场室内1F层vivo专卖店", "phone": "15320067068", "hours": "10:00-22:00", "status": "休息中", "lng": 117.69, "lat": 39.02}, {"storeName": "天津市滨海新区胡家园街道远洋未来汇售点1（vivo体验店）", "province": "天津市", "city": "市辖区", "district": "滨海新区", "address": "天津市滨海新区胡家园街道远洋未来汇一楼vivo体验店", "phone": "18202548354", "hours": "10:00-21:30", "status": "休息中", "lng": 117.6, "lat": 39.04}, {"storeName": "天津市滨海新区生态城和旭路售点1（联通营业厅）", "province": "天津市", "city": "市辖区", "district": "滨海新区", "address": "天津市滨海新区生态城和旭路276号联通营业厅", "phone": "18102035123", "hours": "09:00-18:00", "status": "休息中", "lng": 117.75, "lat": 39.13}, {"storeName": "天津市津南区辛庄永旺梦乐城售点1（vivo专卖店）", "province": "天津市", "city": "市辖区", "district": "津南区", "address": "天津市津南区辛庄永旺梦乐城1楼vivo专卖店", "phone": "13920776061", "hours": "10:00-22:00", "status": "休息中", "lng": 117.35, "lat": 39.03}, {"storeName": "天津市东丽区万达广场售点1（vivo专卖店）", "province": "天津市", "city": "市辖区", "district": "东丽区", "address": "天津市东丽区万达广场1楼vivo专卖店", "phone": "18622192192", "hours": "10:00-22:00", "status": "休息中", "lng": 117.33, "lat": 39.09}, {"storeName": "天津市津南区咸水沽吾悦广场售点1（vivo专卖店）", "province": "天津市", "city": "市辖区", "district": "津南区", "address": "天津市津南区咸水沽吾悦广场1楼vivo专卖店", "phone": "18522266601", "hours": "10:00-22:00", "status": "休息中", "lng": 117.38, "lat": 38.99}, {"storeName": "天津市滨海新区大港胜利街售点1（vivo专卖店）", "province": "天津市", "city": "市辖区", "district": "滨海新区", "address": "天津市滨海新区大港胜利街547号vivo专卖店", "phone": "15022032113", "hours": "9:00-20:00", "status": "休息中", "lng": 117.46, "lat": 38.85}, {"storeName": "影石Insta360河源坚基·春天里授权售点", "province": "广东省", "city": "河源市", "district": "源城区", "address": "永康大道坚基春天里1栋内街1栋113（影石）", "phone": "19933968517", "hours": "", "status": "休息中", "lng": 114.72, "lat": 23.78}];
+// ============ 全局状态 ============
+let map, markerCluster, currentView = 'list';
+let heatLayer = null, bufferLayer = null, voronoiLayer = null;
+let heatActive = false, bufferActive = false, voronoiActive = false;
+let provinceGeo = null; // 省份边界 GeoJSON
+let charts = {};
+
+// ============ 初始化 ============
+function init() {
+  try {
+    buildProvinceFilter();
+    initMap();
+    renderStoreList(ALL_STORES);
+    updateStats(ALL_STORES);
+    document.getElementById('loading').style.display = 'none';
+    // 等布局稳定后刷新地图尺寸
+    setTimeout(function() {
+      if (map) map.invalidateSize();
+    }, 500);
+    // 异步加载省份边界数据（用于 Voronoi 裁剪）
+    loadProvinceBoundaries();
+  } catch(e) {
+    document.getElementById('loading').innerHTML = '<div style="color:#e74c3c;font-size:16px;">加载出错: ' + e.message + '<br><span style="font-size:13px;color:#999;">请检查控制台(F12)查看具体错误</span></div>';
+    console.error('[Init Error]', e);
+  }
+}
+
+// ============ 加载省份边界（100000_full.json 含各省详情） ============
+function loadProvinceBoundaries() {
+  provinceGeo = null;
+  window._chinaBoundary = null;
+  fetch('https://geo.datav.aliyun.com/areas_v3/bound/100000_full.json')
+    .then(function(r) { return r.json(); })
+    .then(function(geo) {
+      provinceGeo = geo;
+      computeChinaBoundary(geo);
+      if (window._voronoiPending) {
+        window._voronoiPending = false;
+        var vcb = document.getElementById('chk-voronoi');
+        if (vcb && !vcb.checked) { vcb.checked = true; voronoiActive = true; toggleVoronoi(); }
+      }
+    })
+    .catch(function(err) {
+      console.warn('[WARN] 边界加载失败:', err.message);
+      provinceGeo = { features: [] }; window._chinaBoundary = null;
+    });
+}
+function computeChinaBoundary(geo) {
+  var polys = [];
+  for (var i = 0; i < geo.features.length; i++) {
+    var cp = geoToClipPoly(geo.features[i].geometry);
+    if (cp) polys.push(cp);
+  }
+  if (polys.length < 2) { window._chinaBoundary = null; return; }
+  try { window._chinaBoundary = polygonClipping.union.apply(null, polys); }
+  catch(e) { window._chinaBoundary = null; }
+}
+function geoToClipPoly(geom) {
+  if (!geom) return null;
+  var rings = [];
+  if (geom.type === 'Polygon') {
+    for (var r = 0; r < geom.coordinates.length; r++)
+      rings.push(geom.coordinates[r].map(function(p) { return [p[0], p[1]]; }));
+  } else if (geom.type === 'MultiPolygon') {
+    for (var i = 0; i < geom.coordinates.length; i++)
+      for (var r = 0; r < geom.coordinates[i].length; r++)
+        rings.push(geom.coordinates[i][r].map(function(p) { return [p[0], p[1]]; }));
+  }
+  return rings.length > 0 ? rings : null;
+}
+function getProvBoundary(provName) {
+  if (!provinceGeo || !provinceGeo.features) return null;
+  for (var i = 0; i < provinceGeo.features.length; i++) {
+    var f = provinceGeo.features[i];
+    if (f.properties && f.properties.name === provName) return f.geometry;
+  }
+  return null;
+}
+
+// ============ 地图初始化（高德底图） ============
+function initMap() {
+  map = L.map('map', {
+    center: [35.0, 105.0],
+    zoom: 5,
+    zoomControl: true,
+  });
+
+  // 高德地图瓦片（国内加载快，无需注册）
+  L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+    subdomains: '1234',
+    attribution: '© 高德地图',
+    maxZoom: 18
+  }).addTo(map);
+
+  renderMarkers(ALL_STORES);
+}
+
+// ============ 渲染 Marker ============
+function renderMarkers(stores) {
+  if (markerCluster) {
+    map.removeLayer(markerCluster);
+  }
+
+  var markers = [];
+  stores.forEach(function(store, idx) {
+    if (!store.lng || !store.lat) return;
+
+    var isOpen = store.status === '营业中';
+    var icon = L.divIcon({
+      className: '',
+      html: '<div style="'
+        + 'width:14px; height:14px; border-radius:50%;'
+        + 'background:' + (isOpen ? '#00d6ca' : '#ccc') + ';'
+        + 'border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,0.3);'
+      + '" title="' + store.storeName + '"></div>',
+      iconSize: [18, 18],
+      iconAnchor: [9, 9]
+    });
+
+    var marker = L.marker([store.lat, store.lng], { icon });
+    const popupHtml = `
+      <div class="popup-name">${store.storeName}</div>
+      <div class="popup-info">
+        <div>${store.address || '—'}</div>
+        <div>${store.phone || '暂无'}</div>
+        <div>${store.hours || '—'}</div>
+        <div>' + (store.city === '市辖区' ? store.province : store.city) + '（' + store.province + '）</div>
+        <div>状态：<b style="color:${isOpen ? 'green' : 'red'}">${store.status || '—'}</b></div>
+      </div>
+    `;
+    marker.bindPopup(popupHtml, { maxWidth: 280 });
+    marker.on('click', () => {
+      // 高亮列表对应项
+    });
+    markers.push(marker);
+  });
+
+  markerCluster = L.markerClusterGroup({
+    maxClusterRadius: 50,
+    disableClusteringAtZoom: 10,
+    spiderfyOnMaxZoom: true,
+    iconCreateFunction: function(cluster) {
+      const count = cluster.getChildCount();
+      let color, size;
+      if (count < 10) { color = '#00d6ca'; size = 36; }
+      else if (count < 30) { color = '#667eea'; size = 44; }
+      else { color = '#fa709a'; size = 52; }
+      return L.divIcon({
+        html: `<div style="
+          width:${size}px; height:${size}px; border-radius:50%;
+          background:${color}; color:#fff; font-weight:700; font-size:13px;
+          display:flex; align-items:center; justify-content:center;
+          box-shadow:0 2px 8px rgba(0,0,0,0.25);
+          border:2px solid #fff;
+        ">${count}</div>`,
+        className: '',
+        iconSize: [size, size]
+      });
+    }
+  });
+
+  markers.forEach(m => markerCluster.addLayer(m));
+  map.addLayer(markerCluster);
+}
+
+// ============ 热力图 ============
+function buildHeatData(stores) {
+  return stores.filter(s => s.lng && s.lat).map(s => [s.lat, s.lng, 0.6]);
+}
+function toggleHeatmap(stores) {
+  stores = stores || ALL_STORES;
+  var cb = document.getElementById('chk-heat');
+  heatActive = cb.checked;
+  if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
+  if (heatActive) {
+    var pts = buildHeatData(stores);
+    heatLayer = L.heatLayer(pts, {
+      radius: 30, blur: 20, maxZoom: 12,
+      gradient: { 0.2: '#00d6ca', 0.4: '#ffd93d', 0.6: '#fa709a', 0.8: '#e74c3c', 1.0: '#c0392b' }
+    });
+    map.addLayer(heatLayer);
+  }
+}
+
+// ============ 缓冲区 ============
+function toggleBuffer(stores) {
+  stores = stores || ALL_STORES;
+  var cb = document.getElementById('chk-buffer');
+  bufferActive = cb.checked;
+  var radius = parseInt(document.getElementById('buffer-dist').value);
+  if (bufferLayer) { map.removeLayer(bufferLayer); bufferLayer = null; }
+  bufferLayer = L.layerGroup();
+  if (bufferActive) {
+    stores.filter(s => s.lng && s.lat).forEach(function(s) {
+      var c = L.circle([s.lat, s.lng], {
+        radius: radius,
+        color: '#3498db', fillColor: '#3498db',
+        fillOpacity: 0.08, weight: 1, opacity: 0.3
+      });
+      bufferLayer.addLayer(c);
+    });
+    map.addLayer(bufferLayer);
+  }
+}
+
+// ============ Voronoi 服务区分析（按省界裁剪） ============
+function buildVoronoiData(stores) {
+  var pts = stores.filter(function(s) { return s.lng && s.lat; });
+  if (pts.length < 3) return null;
+  var coords = pts.map(function(s) { return [s.lng, s.lat]; });
+  var delaunay = d3.Delaunay.from(coords);
+  var voronoi = delaunay.voronoi([73, 3, 136, 54]);
+  var polygons = [];
+
+  for (var i = 0; i < pts.length; i++) {
+    var cell = voronoi.cellPolygon(i);
+    if (!cell) continue;
+
+    // 第一步：用该门店所属省份的行政边界裁剪
+    var clipped = clipCellByProvince(cell, pts[i].province);
+    if (clipped && clipped.length >= 3) {
+      polygons.push({ latlngs: clipped, store: pts[i] });
+      continue;
+    }
+
+    // 兜底：用中国陆域裁剪
+    if (window._chinaBoundary) {
+      var cellPoly = [cell.map(function(p) { return [p[0], p[1]]; })];
+      try {
+        var clipped2 = polygonClipping.intersection(cellPoly, window._chinaBoundary);
+        if (clipped2 && clipped2.length > 0 && clipped2[0].length >= 3) {
+          polygons.push({ latlngs: clipped2[0].map(function(p) { return [p[1], p[0]]; }), store: pts[i] });
+          continue;
+        }
+      } catch(e) {}
+    }
+
+    // 最终兜底：原始 Voronoi
+    var latlngs = cell.map(function(p) { return [p[1], p[0]]; });
+    polygons.push({ latlngs: latlngs, store: pts[i] });
+  }
+  return polygons;
+}
+
+// 用省份边界裁剪 Voronoi cell
+function clipCellByProvince(cellPoints, provName) {
+  var provGeom = getProvBoundary(provName);
+  if (!provGeom) return null;
+  var clipPoly = geoToClipPoly(provGeom);
+  if (!clipPoly) return null;
+  var cellPoly = [cellPoints.map(function(p) { return [p[0], p[1]]; })];
+  try {
+    var clipped = polygonClipping.intersection(cellPoly, clipPoly);
+    if (clipped && clipped.length > 0 && clipped[0].length >= 3) {
+      return clipped[0].map(function(p) { return [p[1], p[0]]; });
+    }
+  } catch(e) {}
+  return null;
+}
+
+function toggleVoronoi(stores) {
+  stores = stores || ALL_STORES;
+  var cb = document.getElementById('chk-voronoi');
+  voronoiActive = cb.checked;
+
+  // 如果省份边界还没加载完，显示提示
+  if (voronoiActive && provinceGeo === null) {
+    if (!document.getElementById('voronoi-loading')) {
+      var tip = document.createElement('div');
+      tip.id = 'voronoi-loading';
+      tip.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.7);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;z-index:1001;';
+      tip.textContent = '正在加载省界数据，请稍候…';
+      document.getElementById('map-container').appendChild(tip);
+    }
+    // 取消勾选，标记等边界加载完后自动重试
+    cb.checked = false;
+    voronoiActive = false;
+    window._voronoiPending = true;
+    return;
+  }
+
+  var tip = document.getElementById('voronoi-loading');
+  if (tip) tip.remove();
+
+  if (voronoiLayer) { map.removeLayer(voronoiLayer); voronoiLayer = null; }
+  voronoiLayer = L.layerGroup();
+  if (voronoiActive) {
+    var polygons = buildVoronoiData(stores);
+    if (polygons) {
+      polygons.forEach(function(p) {
+        var hue = (p.store.city.charCodeAt(0) * 37 + p.store.province.charCodeAt(0) * 13) % 360;
+        var poly = L.polygon(p.latlngs, {
+          color: 'hsl(' + hue + ', 65%, 50%)',
+          fillColor: 'hsl(' + hue + ', 60%, 85%)',
+          fillOpacity: 0.25, weight: 1.5, opacity: 0.5
+        });
+        poly.bindPopup('<b>' + p.store.storeName + '</b><br>省界裁剪·服务覆盖区');
+        voronoiLayer.addLayer(poly);
+      });
+    }
+    map.addLayer(voronoiLayer);
+  }
+}
+
+// ============ 左侧列表渲染 ============
+function renderStoreList(stores) {
+  const wrapper = document.getElementById('store-list-wrapper');
+  wrapper.innerHTML = '';
+
+  if (stores.length === 0) {
+    wrapper.innerHTML = '<div style="padding:40px;text-align:center;color:#999;">暂无匹配的门店</div>';
+    return;
+  }
+
+  stores.forEach((store, idx) => {
+    const div = document.createElement('div');
+    div.className = 'store-item';
+    div.onclick = () => {
+      if (store.lng && store.lat) {
+        map.flyTo([store.lat, store.lng], 14);
+      }
+    };
+    div.innerHTML = `
+      <div class="name">${store.storeName || '—'}</div>
+      <div class="address">${store.address || '—'}</div>
+      <div class="meta">
+        <span>${store.phone || '暂无'}</span>
+        <span>${store.city === '市辖区' ? store.province : store.city}</span>
+        <span style="color:${store.status === '营业中' ? '#009688' : '#999'}">${store.status || '—'}</span>
+      </div>
+    `;
+    wrapper.appendChild(div);
+  });
+}
+
+// ============ 统计更新 ============
+function updateStats(stores) {
+  const provinces = new Set(stores.map(s => s.province).filter(Boolean));
+  const cities = new Set(stores.map(s => s.city).filter(Boolean));
+  const hasPhone = stores.filter(s => s.phone && s.phone.length > 0).length;
+
+  document.getElementById('stat-total').textContent = stores.length;
+  document.getElementById('stat-prov').textContent = provinces.size;
+  document.getElementById('stat-city').textContent = cities.size;
+  document.getElementById('stat-phone').textContent = hasPhone;
+  document.getElementById('total-num').textContent = stores.length;
+  document.getElementById('total-prov').textContent = provinces.size;
+  document.getElementById('total-city').textContent = cities.size;
+  document.getElementById('result-count').textContent = `显示 ${stores.length} 家门店`;
+}
+
+// ============ 省份筛选下拉 ============
+function buildProvinceFilter() {
+  const provinces = [...new Set(ALL_STORES.map(s => s.province).filter(Boolean))].sort();
+  const select = document.getElementById('filter-province');
+  provinces.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p;
+    opt.textContent = p;
+    select.appendChild(opt);
+  });
+}
+
+// ============ 筛选逻辑 ============
+function onFilterChange() {
+  const provVal = document.getElementById('filter-province').value;
+  const cityVal = document.getElementById('filter-city').value;
+  const searchVal = document.getElementById('filter-search').value.trim().toLowerCase();
+
+  buildCityFilter(provVal);
+
+  let filtered = ALL_STORES.filter(s => {
+    if (provVal && s.province !== provVal) return false;
+    if (cityVal && s.city !== cityVal && (s.city !== '市辖区' || s.province !== cityVal)) return false;
+    if (searchVal) {
+      const hay = (s.storeName + s.address + (s.city === '市辖区' ? s.province : s.city) + s.province).toLowerCase();
+      if (!hay.includes(searchVal)) return false;
+    }
+    return true;
+  });
+
+  updateStats(filtered);
+  renderStoreList(filtered);
+  renderMarkers(filtered);
+
+  // 分析图层同步当前筛选结果
+  if (heatActive) toggleHeatmap(filtered);
+  if (bufferActive) toggleBuffer(filtered);
+  if (voronoiActive) toggleVoronoi(filtered);
+
+  if (filtered.length > 0 && filtered.length < ALL_STORES.length) {
+    const valid = filtered.filter(s => s.lng && s.lat);
+    if (valid.length > 0) {
+      const bounds = L.latLngBounds(valid.map(s => [s.lat, s.lng]));
+      map.fitBounds(bounds, { padding: [50, 50] });
+    }
+  }
+}
+
+function buildCityFilter(provVal) {
+  const citySelect = document.getElementById('filter-city');
+  while (citySelect.options.length > 1) citySelect.remove(1);
+
+  let cities = [];
+  if (provVal) {
+    cities = [...new Set(ALL_STORES.filter(s => s.province === provVal).map(s => {
+      return s.city === '市辖区' ? s.province : s.city;
+    }))].sort();
+  } else {
+    cities = [...new Set(ALL_STORES.map(s => s.city === '市辖区' ? s.province : s.city))].sort();
+  }
+  cities.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c;
+    citySelect.appendChild(opt);
+  });
+}
+
+function resetFilters() {
+  document.getElementById('filter-province').value = '';
+  document.getElementById('filter-city').value = '';
+  document.getElementById('filter-search').value = '';
+  buildCityFilter('');
+  onFilterChange();
+  map.flyTo([35.0, 105.0], 5);
+}
+
+// ============ 视图切换 ============
+function switchView(view) {
+  currentView = view;
+  const listEl = document.getElementById('store-list-wrapper');
+  const chartEl = document.getElementById('chart-view');
+  const tabs = document.querySelectorAll('.tab-btn');
+
+  tabs.forEach((t, i) => t.classList.toggle('active', i === (view === 'list' ? 0 : 1)));
+
+  if (view === 'list') {
+    listEl.style.display = 'block';
+    chartEl.classList.remove('active');
+    setTimeout(() => map.invalidateSize(), 100);
+  } else {
+    listEl.style.display = 'none';
+    chartEl.classList.add('active');
+    renderCharts();
+  }
+}
+
+// ============ Chart.js 图表 ============
+function renderCharts() {
+  Object.values(charts).forEach(c => c.destroy());
+  charts = {};
+
+  // TOP 15 省份
+  const provCnt = {};
+  ALL_STORES.forEach(s => { provCnt[s.province] = (provCnt[s.province] || 0) + 1; });
+  const topProv = Object.entries(provCnt).sort((a,b) => b[1]-a[1]).slice(0, 15);
+
+  charts.province = new Chart(document.getElementById('chart-province'), {
+    type: 'bar',
+    data: {
+      labels: topProv.map(x => x[0]),
+      datasets: [{
+        label: '门店数量',
+        data: topProv.map(x => x[1]),
+        backgroundColor: 'rgba(0, 214, 202, 0.7)',
+        borderColor: 'rgba(0, 150, 136, 1)',
+        borderWidth: 1,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, grid: { color: '#f0f0f0' } },
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } }
+      }
+    }
+  });
+
+  // TOP 20 城市（横向）
+  const cityCnt = {};
+  ALL_STORES.forEach(s => { var c = (s.city === '市辖区') ? s.province : s.city; cityCnt[c] = (cityCnt[c] || 0) + 1; });
+  const topCity = Object.entries(cityCnt).sort((a,b) => b[1]-a[1]).slice(0, 20);
+
+  charts.city = new Chart(document.getElementById('chart-city'), {
+    type: 'bar',
+    data: {
+      labels: topCity.map(x => x[0]),
+      datasets: [{
+        label: '门店数量',
+        data: topCity.map(x => x[1]),
+        backgroundColor: 'rgba(102, 126, 234, 0.7)',
+        borderColor: 'rgba(102, 126, 234, 1)',
+        borderWidth: 1,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { beginAtZero: true, grid: { color: '#f0f0f0' } },
+        y: { grid: { display: false }, ticks: { font: { size: 11 } } }
+      }
+    }
+  });
+
+  // 省份柱状图（全部省份）
+  charts.heatmap = new Chart(document.getElementById('chart-heatmap'), {
+    type: 'bar',
+    data: {
+      labels: topProv.map(x => x[0]),
+      datasets: [{
+        label: '门店数量',
+        data: topProv.map(x => x[1]),
+        backgroundColor: topProv.map((_, i) => {
+          const colors = [
+            'rgba(250,112,154,0.8)', 'rgba(240,147,251,0.8)', 'rgba(102,126,234,0.8)',
+            'rgba(0,214,202,0.8)', 'rgba(0,150,136,0.8)',
+            'rgba(250,112,154,0.6)', 'rgba(240,147,251,0.6)', 'rgba(102,126,234,0.6)',
+            'rgba(0,214,202,0.6)', 'rgba(0,150,136,0.6)',
+            'rgba(250,112,154,0.5)', 'rgba(240,147,251,0.5)', 'rgba(102,126,234,0.5)'
+          ];
+          return colors[i % colors.length];
+        }),
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+      },
+      scales: {
+        y: { beginAtZero: true, grid: { color: '#f0f0f0' } },
+        x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 45 } }
+      }
+    }
+  });
+}
+
+// ============ 启动 ============
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
